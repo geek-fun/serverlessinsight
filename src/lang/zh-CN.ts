@@ -993,9 +993,24 @@ export const zhCN = {
   LOGIN_LINE_PROMPT: '选择线路 [1-2]: ',
   LOGIN_LINE_MISMATCH:
     '该 API 密钥属于 {{keyLine}} 线，但当前正在向 {{line}} 线认证。请从 {{line}} 线控制台获取密钥——未保存任何内容。',
-  LOGIN_ORG_MISMATCH: '授权组织 "{{actual}}" 与 --org {{expected}} 不一致。未保存任何内容。',
+  LOGIN_ORG_MISMATCH:
+    '授权组织 "{{actual}}" 与 --org {{expected}} 不一致。未保存任何内容。\n这把 API 密钥属于组织 "{{actual}}"。你可以：\n  - 改传 --org {{actual}}，或\n  - 在控制台为组织 "{{expected}}" 签发新的 API 密钥。',
+  LOGIN_ORG_MISMATCH_ACTIVE: '当前激活 profile："{{profileKey}}"（组织：{{orgName}}）。',
   LOGIN_NEED_LINE: '该 API 密钥未携带线段。请传入 --line international|china 以便路由。',
   LOGIN_PROFILE_SAVED: '✅ 已保存 profile {{profileKey}}（当前激活）· {{userEmail}}',
+  LOGIN_DIAG_LEGACY_FILE: '本地凭据为旧版单 profile 格式（consoleUrl: {{url}}）。',
+  LOGIN_DIAG_LOCALHOST_URL: '本地凭据指向非生产环境（{{url}}），可能是本地开发服务器。',
+  LOGIN_DIAG_LEGACY_KEY: '已存的 API 密钥未携带线段（旧格式）。',
+  LOGIN_DIAG_MISSING_SLUG: '已存 profile "{{profileKey}}" 尚未验证组织 slug（占位键）。',
+  LOGIN_HEAL_DEBUG: '修复 profile：{{from}} -> {{to}}',
+  LOGIN_HEALED: '✅ 已修复并重新验证本地 profile {{profileKey}} · {{userEmail}}',
+  LOGIN_HEAL_KEY_INVALID:
+    '控制台拒绝了已存的 API 密钥（401/403）。已保留原 profile——请使用新密钥重新登录。',
+  LOGIN_HEAL_UNREACHABLE: '暂时无法连接控制台验证本地凭据。已保留原 profile——请稍后重试。',
+  LOGIN_HEAL_LINE_UNRESOLVED:
+    '无法确定已存 profile 的线路。请执行：si login --si-api-key <密钥> --line <international|china>，或删除 ~/.serverlessinsight/credentials.json 后重新登录。',
+  LOGIN_HEAL_SKIPPED: '无法自动修复本地 profile。请携带 API 密钥重新登录以刷新。',
+  LOGIN_VALIDATE_UNREACHABLE: '暂时无法连接控制台验证 API 密钥。未保存任何内容。请检查网络后重试。',
 
   LOGOUT_REVOKING: '正在撤销 API 密钥...',
   LOGOUT_DELETING_CREDENTIALS: '正在删除存储的凭证...',
@@ -1477,7 +1492,7 @@ export const zhCN = {
   OPT_SECURITY_TOKEN: '指定 SecurityToken',
   OPT_NO_REFRESH: '跳过线上探测，仅对比配置与状态（无漂移检测）',
   OPT_SI_API_KEY: 'ServerlessInsight API key（覆盖 SI_API_KEY 环境变量）',
-  OPT_ORG: 'Console 组织 slug（多个组织同名时消歧）',
+  OPT_ORG: 'Console 组织 slug（仅小写字母、数字、连字符，如 my-org）。断言：密钥必须属于该组织',
   OPT_LINE: 'Console 线路：international | china',
   OPT_AUTO_APPROVE: '跳过部署前的计划交互确认',
   OPT_PARAMETER: '覆盖参数',

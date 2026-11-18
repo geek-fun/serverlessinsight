@@ -1,7 +1,6 @@
 import { createApiClient, ApiError } from '../apiClient';
 import type { ApiClient } from '../apiClient';
 import { assertOrgMatches, assertValidatedOrg, assertValidatedRegion } from '../consoleLines';
-import { updateProfile } from '../credentialStore';
 import { resolveLineContext, LineContext } from '../lineContext';
 import { logger } from '../logger';
 import {
@@ -222,12 +221,9 @@ export const createSaasStateBackend = async (
     assertValidatedOrg(targetOrg, orgSlug);
 
     const orgId = fetched?.orgId ?? local.orgId;
-    if (fetched?.orgSlug && lineCtx.profileKey) {
-      updateProfile(lineCtx.profileKey, lineCtx.apiKey, {
-        orgSlug: fetched.orgSlug,
-        ...(fetched.orgId ? { orgId: fetched.orgId } : {}),
-      });
-    }
+    // Issue #309: state commands never write the credentials file. The org
+    // identity fetched here stays in memory for this run; `si login` is the
+    // only entry that persists (re-keys / heals) a stored profile.
     resolvedIdentity = { orgId, orgSlug };
     knownOrgId = orgId ?? knownOrgId;
     return resolvedIdentity;

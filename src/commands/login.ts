@@ -2,8 +2,15 @@ import * as readline from 'node:readline';
 import { createServer, Server } from 'node:http';
 import open from 'open';
 import { logger } from '../common';
-import { validateApiKey } from '../common/apiClient';
-import { saveProfile, loadCredentialsFile } from '../common/credentialStore';
+import { ApiError, validateApiKey } from '../common/apiClient';
+import {
+  ConsoleProfile,
+  CredentialsFile,
+  loadCredentialsFile,
+  readLegacyConsoleUrl,
+  saveProfile,
+  updateProfile,
+} from '../common/credentialStore';
 import {
   CONSOLE_LINES,
   ConsoleLineName,
@@ -12,6 +19,8 @@ import {
   consoleUiOriginFor,
   normalizeLineName,
   parseApiKeyLine,
+  resolveLineFromOrigin,
+  splitProfileKey,
   toProfileKey,
   validateApiKeyFormat,
 } from '../common/consoleLines';
@@ -54,6 +63,117 @@ const promptLinePicker = async (): Promise<ConsoleLineName> => {
   }
 };
 
+/**
+ * The stored active profile as seen by login's heal flow (issue #309).
+ * `file` keeps the loaded shape; `readLegacyConsoleUrl()` re-reads the raw
+ * file when the legacy `consoleUrl` is needed for line resolution.
+ */
+type StoredProfile = {
+  readonly file: CredentialsFile;
+  readonly profileKey: string;
+  readonly profile: ConsoleProfile;
+};
+
+/** Diagnostics for a stored profile that is stale or points somewhere odd. */
+const storedAnomalies = (stored: StoredProfile): string[] => {
+  const anomalies: string[] = [];
+  const legacyUrl = readLegacyConsoleUrl();
+  if (legacyUrl !== null) {
+    anomalies.push(lang.__('LOGIN_DIAG_LEGACY_FILE', { url: legacyUrl }));
+    if (!resolveLineFromOrigin(legacyUrl)) {
+      anomalies.push(lang.__('LOGIN_DIAG_LOCALHOST_URL', { url: legacyUrl }));
+    }
+  }
+  if (!parseApiKeyLine(stored.profile.apiKey)) {
+    anomalies.push(lang.__('LOGIN_DIAG_LEGACY_KEY'));
+  }
+  if (!stored.profile.orgSlug) {
+    anomalies.push(lang.__('LOGIN_DIAG_MISSING_SLUG', { profileKey: stored.profileKey }));
+  }
+  return anomalies;
+};
+
+/**
+ * Issue #309 heal matrix: pin the stored profile's line from its key segment,
+ * then an explicit `--line`, then the stored legacy URL. A legacy file's
+ * in-memory profile key prefix is a fabricated default, so for legacy files
+ * only those three sources are trusted.
+ */
+const storedLineForHeal = (
+  stored: StoredProfile,
+  flagLine?: ConsoleLineName | null,
+): ConsoleLineName | null => {
+  const keyLine = parseApiKeyLine(stored.profile.apiKey);
+  if (keyLine) return keyLine;
+  if (flagLine) return flagLine;
+  const legacyUrl = readLegacyConsoleUrl();
+  if (legacyUrl !== null) return resolveLineFromOrigin(legacyUrl);
+  return splitProfileKey(stored.profileKey)?.line ?? null;
+};
+
+/**
+ * Issue #309 defect 1: re-login heals a stale stored profile in place —
+ * re-key it to `line/orgSlug` and refresh the identity from the validate
+ * response (which is authoritative). The stored profile is kept untouched on
+ * any failure. Returns true when the profile now verifies healthy.
+ */
+const healStoredProfile = async (
+  stored: StoredProfile,
+  flagLine?: ConsoleLineName | null,
+): Promise<boolean> => {
+  for (const anomaly of storedAnomalies(stored)) {
+    logger.warn(anomaly);
+  }
+  const line = storedLineForHeal(stored, flagLine);
+  if (!line) {
+    logger.error(lang.__('LOGIN_HEAL_LINE_UNRESOLVED'));
+    return false;
+  }
+  if (!validateApiKeyFormat(stored.profile.apiKey)) {
+    logger.error(lang.__('LOGIN_KEY_FORMAT_INVALID'));
+    return false;
+  }
+
+  logger.info(lang.__('LOGIN_VALIDATING_KEY'));
+  try {
+    const result = await validateApiKey(stored.profile.apiKey, consoleOriginFor(line));
+    const expectedSegment = CONSOLE_LINES[line].keySegment;
+    if (result.region && result.region !== expectedSegment) {
+      logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine: result.region, line }));
+      return false;
+    }
+    const slug = result.orgSlug || result.orgId || 'unknown';
+    const healed = updateProfile(stored.profileKey, stored.profile.apiKey, {
+      orgSlug: slug,
+      ...(result.orgId ? { orgId: result.orgId } : {}),
+      ...(result.orgName ? { orgName: result.orgName } : {}),
+      ...(result.userEmail ? { userEmail: result.userEmail } : {}),
+    });
+    if (!healed) {
+      logger.error(lang.__('LOGIN_HEAL_SKIPPED'));
+      return false;
+    }
+    if (healed !== stored.profileKey) {
+      logger.debug(lang.__('LOGIN_HEAL_DEBUG', { from: stored.profileKey, to: healed }));
+    }
+    logger.info(
+      lang.__('LOGIN_HEALED', {
+        profileKey: healed,
+        userEmail: result.userEmail || stored.profile.userEmail || '(unknown)',
+      }),
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      logger.error(lang.__('LOGIN_HEAL_KEY_INVALID'));
+    } else {
+      logger.error(lang.__('LOGIN_HEAL_UNREACHABLE'));
+    }
+    logger.debug(error instanceof Error ? error.message : String(error));
+    return false;
+  }
+};
+
 type LoginIdentity = {
   orgId: string;
   orgName: string;
@@ -81,7 +201,21 @@ const finalizeLogin = (
     return false;
   }
   if (orgFlag && identity.orgSlug && identity.orgSlug !== orgFlag) {
+    // Issue #309 (direction A): `--org` is an expected-org assertion. The
+    // error names both fix paths and, when a profile is stored, shows the
+    // active side of the conflict too.
     logger.error(lang.__('LOGIN_ORG_MISMATCH', { actual: identity.orgSlug, expected: orgFlag }));
+    const stored = loadCredentialsFile();
+    const storedKey = stored?.active;
+    const storedProfile = storedKey ? stored?.profiles[storedKey] : undefined;
+    if (storedProfile) {
+      logger.error(
+        lang.__('LOGIN_ORG_MISMATCH_ACTIVE', {
+          profileKey: storedKey!,
+          orgName: storedProfile.orgName || storedProfile.orgSlug || storedProfile.orgId,
+        }),
+      );
+    }
     return false;
   }
   const slug = identity.orgSlug || identity.orgId || 'unknown';
@@ -131,7 +265,13 @@ const loginWithKey = async (
       result.region,
     );
   } catch (error) {
-    logger.error(lang.__('LOGIN_KEY_INVALID'));
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      logger.error(lang.__('LOGIN_KEY_INVALID'));
+    } else {
+      // Issue #309: a network/5xx failure says nothing about the key itself —
+      // nothing is stored and any existing profile stays untouched.
+      logger.error(lang.__('LOGIN_VALIDATE_UNREACHABLE'));
+    }
     logger.debug(error instanceof Error ? error.message : String(error));
     return false;
   }
@@ -283,21 +423,12 @@ export const login = async (options: {
   line?: string;
   org?: string;
 }): Promise<void> => {
-  // Check if already logged in
   const file = loadCredentialsFile();
-  const activeProfile = file?.active ? file.profiles[file.active] : undefined;
-  if (activeProfile && process.stdin.isTTY === true) {
-    const answer = await ask(
-      lang.__('LOGIN_ALREADY_LOGGED_IN', {
-        userEmail: activeProfile.userEmail || '',
-        orgName: activeProfile.orgName || activeProfile.orgId,
-      }),
-    );
-    if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
-      logger.info(lang.__('LOGIN_CANCELLED'));
-      return;
-    }
-  }
+  const activeKey = file?.active;
+  const stored: StoredProfile | null =
+    file && activeKey && file.profiles[activeKey]
+      ? { file, profileKey: activeKey, profile: file.profiles[activeKey]! }
+      : null;
 
   const flagLine = normalizeLineName(options.line);
 
@@ -309,7 +440,16 @@ export const login = async (options: {
       logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine, line: flagLine }));
       return;
     }
-    const line = keyLine ?? flagLine ?? normalizeLineName(process.env.SI_CONSOLE_LINE);
+    // Issue #309: re-entering the stored key skips the line picker — the
+    // stored profile (its composite prefix or legacy URL) already pins the line.
+    const storedLine = (() => {
+      if (!stored || stored.profile.apiKey !== key || parseApiKeyLine(key)) return null;
+      const legacyUrl = readLegacyConsoleUrl();
+      if (legacyUrl !== null) return resolveLineFromOrigin(legacyUrl);
+      return splitProfileKey(stored.profileKey)?.line ?? null;
+    })();
+    const line =
+      keyLine ?? flagLine ?? normalizeLineName(process.env.SI_CONSOLE_LINE) ?? storedLine;
     if (!line) {
       if (process.stdin.isTTY === true) {
         const picked = await promptLinePicker();
@@ -324,6 +464,29 @@ export const login = async (options: {
     }
     await loginWithKey(key, line, options.org);
     return;
+  }
+
+  // Issue #309 defect 1: without a new key, re-login auto-heals a stale
+  // stored profile (re-key + identity refresh) instead of nagging about it.
+  // Unhealable states (dead key, unreachable console, undeterminable line)
+  // keep the profile and fall through to a fresh sign-in below.
+  if (stored && storedAnomalies(stored).length > 0) {
+    const healed = await healStoredProfile(stored, flagLine);
+    if (healed) return;
+  }
+
+  // Check if already logged in — only a healthy stored profile asks.
+  if (stored && storedAnomalies(stored).length === 0 && process.stdin.isTTY === true) {
+    const answer = await ask(
+      lang.__('LOGIN_ALREADY_LOGGED_IN', {
+        userEmail: stored.profile.userEmail || '',
+        orgName: stored.profile.orgName || stored.profile.orgId,
+      }),
+    );
+    if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+      logger.info(lang.__('LOGIN_CANCELLED'));
+      return;
+    }
   }
 
   // Interactive flow: pick the region first (ADR-008), then the method.

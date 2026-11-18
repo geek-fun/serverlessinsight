@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -113,11 +114,42 @@ export const loadCredentialsFile = (): CredentialsFile | null => {
   }
 };
 
+/**
+ * Raw `consoleUrl` of a legacy (v1) credentials file, read without the
+ * in-memory heal. Login's heal flow uses it to pin the line; null for v2
+ * files, missing files, or unparsable content.
+ */
+export const readLegacyConsoleUrl = (): string | null => {
+  const credPath = getCredentialsPath();
+  if (!fs.existsSync(credPath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(credPath, 'utf-8')) as Record<string, unknown>;
+    return isLegacyShape(parsed) ? ((parsed['consoleUrl'] as string) ?? null) : null;
+  } catch {
+    return null;
+  }
+};
+
 const writeFile = (file: CredentialsFile): void => {
   ensureCredentialsDir();
   const credPath = getCredentialsPath();
-  fs.writeFileSync(credPath, JSON.stringify(file, null, 2), 'utf-8');
-  fs.chmodSync(credPath, 0o600);
+  const serialized = JSON.stringify(file, null, 2);
+  // Issue #309: skip the write (and the mtime bump) when nothing changed —
+  // heal and identity-refresh paths must not touch an already-healthy file.
+  try {
+    if (fs.readFileSync(credPath, 'utf-8') === serialized) return;
+  } catch {
+    // First write (or unreadable file) — fall through and create it.
+  }
+  // Atomic replace: write a private temp file, then rename, so a crash
+  // mid-write can never leave a truncated credentials.json behind.
+  const tmp = `${credPath}.tmp-${process.pid}-${crypto.randomUUID()}`;
+  try {
+    fs.writeFileSync(tmp, serialized, { encoding: 'utf-8', mode: 0o600 });
+    fs.renameSync(tmp, credPath);
+  } finally {
+    if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+  }
 };
 
 /** Store (or replace) the profile for `line/orgSlug` and optionally make it active. */
@@ -142,27 +174,46 @@ export const saveProfile = (
   writeFile({ active, profiles });
 };
 
-/** Re-key a profile after verifying its slug with the same API key. */
+export type ProfilePatch = {
+  readonly orgSlug: string;
+  readonly orgId?: string;
+  readonly orgName?: string;
+  readonly userEmail?: string;
+};
+
+/**
+ * Re-key a profile after verifying its slug with the same API key. The patch
+ * fields come from the validate response, which is authoritative (issue #309).
+ * Returns the new profile key, or null when nothing was applied — the caller
+ * (login heal) must not assume success.
+ */
 export const updateProfile = (
   profileKey: string,
   apiKey: string,
-  patch: { orgSlug: string; orgId?: string },
-): void => {
+  patch: ProfilePatch,
+): string | null => {
   const file = loadCredentialsFile();
   const current = file?.profiles[profileKey];
   const profile = splitProfileKey(profileKey);
-  if (!file || !current || current.apiKey !== apiKey || !profile) return;
+  if (!file || !current || current.apiKey !== apiKey || !profile) return null;
 
   const resolvedKey = toProfileKey(profile.line, patch.orgSlug);
-  if (resolvedKey !== profileKey && file.profiles[resolvedKey]) return;
+  if (resolvedKey !== profileKey && file.profiles[resolvedKey]) return null;
 
   const profiles = { ...file.profiles };
   delete profiles[profileKey];
-  profiles[resolvedKey] = { ...current, ...patch };
+  profiles[resolvedKey] = {
+    ...current,
+    orgSlug: patch.orgSlug,
+    ...(patch.orgId !== undefined ? { orgId: patch.orgId } : {}),
+    ...(patch.orgName !== undefined ? { orgName: patch.orgName } : {}),
+    ...(patch.userEmail !== undefined ? { userEmail: patch.userEmail } : {}),
+  };
   writeFile({
     active: file.active === profileKey ? resolvedKey : file.active,
     profiles,
   });
+  return resolvedKey;
 };
 
 /** Log out: remove the active profile; drop the file entirely when it holds nothing else. */

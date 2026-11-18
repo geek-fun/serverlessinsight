@@ -80,15 +80,19 @@ const promptProfile = async (profileKeys: string[], operation?: string): Promise
 export const resolveLineContext = async (
   params: ResolveLineContextParams,
 ): Promise<LineContext> => {
-  const file = loadCredentialsFile();
+  const explicitKey = params.siApiKey ?? process.env.SI_API_KEY;
+  const keySource =
+    params.siApiKey !== undefined ? 'flag' : explicitKey !== undefined ? 'env' : 'profile';
+  // Issue #309: a flag/env key is self-contained CI identity. The credentials
+  // file is never read and no stored profile is selected, so a runner with a
+  // shared or cached HOME can neither inherit a local identity nor have one
+  // attached to its key — the validate roundtrip is the only identity source.
+  const file = keySource === 'profile' ? loadCredentialsFile() : null;
   const profiles = file?.profiles ?? {};
   const activeKey = file?.active;
   const active = activeKey ? splitProfileKey(activeKey) : null;
   const targetSlug = params.declaredOrg ?? params.orgFlag;
 
-  const explicitKey = params.siApiKey ?? process.env.SI_API_KEY;
-  const keySource =
-    params.siApiKey !== undefined ? 'flag' : explicitKey !== undefined ? 'env' : 'profile';
   const keyLine = explicitKey ? parseApiKeyLine(explicitKey) : null;
   const flagLine = assertLineFlag(params.lineFlag);
   if (keyLine && flagLine && keyLine !== flagLine) {
@@ -136,7 +140,7 @@ export const resolveLineContext = async (
     lineSource = 'active';
   }
 
-  if (!line && isInteractive()) {
+  if (!line && keySource === 'profile' && isInteractive()) {
     const candidates = Object.keys(profiles).filter(
       (key) => splitProfileKey(key) && (!targetSlug || !profiles[key]?.orgSlug),
     );

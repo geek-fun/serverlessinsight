@@ -124,18 +124,21 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
       expect(result).not.toHaveProperty('orgSlug');
       expect(result).not.toHaveProperty('orgName');
       expect(result).not.toHaveProperty('userEmail');
+      // Issue #309: an explicit key never reads the credentials file.
+      expect(mockLoadCredentialsFile).not.toHaveBeenCalled();
     },
   );
 
-  it('allows a legacy explicit key for a different org to use the saved line', async () => {
+  it('an explicit legacy key never borrows the stored line (issue #309)', async () => {
     mockLoadCredentialsFile.mockReturnValue({
       active: 'china/example-org',
       profiles: { 'china/example-org': chinaProfile },
     });
 
-    const result = await resolveLineContext({ declaredOrg: 'other-org', siApiKey: legacyKey });
-    expect(result).toMatchObject({ apiKey: legacyKey, line: 'china' });
-    expect(result).not.toHaveProperty('orgSlug');
+    await expect(
+      resolveLineContext({ declaredOrg: 'other-org', siApiKey: legacyKey }),
+    ).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+    expect(mockLoadCredentialsFile).not.toHaveBeenCalled();
   });
 
   it('selects the active legacy credential on its line when YAML names an org', async () => {
@@ -167,7 +170,7 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
     });
   });
 
-  it('step 2: a key segment restricts the slug lookup to its own line', async () => {
+  it('step 2: an explicit key never selects a stored profile even when the slug matches (issue #309)', async () => {
     mockLoadCredentialsFile.mockReturnValue(twoLineFile);
     const ctx = await resolveLineContext({
       siApiKey: intlKey,
@@ -175,8 +178,10 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
       operation: 'deploy',
     });
     expect(ctx.line).toBe('international');
-    expect(ctx.profileKey).toBe('international/example-org');
-    expect(ctx.orgId).toBe('org-com');
+    expect(ctx.apiKey).toBe(intlKey);
+    expect(ctx.profileKey).toBeUndefined();
+    expect(ctx.orgId).toBeUndefined();
+    expect(mockLoadCredentialsFile).not.toHaveBeenCalled();
   });
 
   it('step 3: --line overrides, and disagreeing with the key segment is a conflict', async () => {
@@ -201,12 +206,18 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
     expect(ctx.lineSource).toBe('active');
   });
 
-  it('step 4: a key segment silently overrides an active profile on the other line (CI case)', async () => {
+  it('CI guard: an explicit key never reads credentials nor selects a profile (issue #309)', async () => {
     mockLoadCredentialsFile.mockReturnValue(twoLineFile);
     const ctx = await resolveLineContext({ siApiKey: intlKey, operation: 'deploy' });
     expect(ctx.line).toBe('international');
     expect(ctx.apiKey).toBe(intlKey);
-    expect(ctx.profileKey).toBe('international/example-org');
+    expect(ctx.keySource).toBe('flag');
+    expect(ctx.profileKey).toBeUndefined();
+    expect(ctx.orgId).toBeUndefined();
+    expect(ctx.orgSlug).toBeUndefined();
+    expect(ctx.orgName).toBeUndefined();
+    expect(ctx.userEmail).toBeUndefined();
+    expect(mockLoadCredentialsFile).not.toHaveBeenCalled();
   });
 
   it('step 5: non-interactive runs fail fast when nothing resolves', async () => {

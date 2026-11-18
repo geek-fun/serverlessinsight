@@ -3,12 +3,21 @@ jest.mock('../../../src/common/logger', () => ({
 }));
 
 jest.mock('../../../src/lang', () => ({
-  lang: { __: (key: string) => key },
+  lang: { __: jest.fn((key: string) => key) },
 }));
 
-jest.mock('../../../src/common/apiClient', () => ({
-  validateApiKey: jest.fn(),
-}));
+jest.mock('../../../src/common/apiClient', () => {
+  class MockApiError extends Error {
+    status: number;
+
+    constructor(message: string, status: number) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+    }
+  }
+  return { validateApiKey: jest.fn(), ApiError: MockApiError };
+});
 
 jest.mock('open', () => jest.fn());
 
@@ -34,10 +43,14 @@ jest.mock('node:http', () => ({
 
 const mockSaveProfile = jest.fn();
 const mockLoadCredentialsFile = jest.fn();
+const mockUpdateProfile = jest.fn();
+const mockReadLegacyConsoleUrl = jest.fn();
 
 jest.mock('../../../src/common/credentialStore', () => ({
   saveProfile: (...args: unknown[]) => mockSaveProfile(...args),
   loadCredentialsFile: (...args: unknown[]) => mockLoadCredentialsFile(...args),
+  updateProfile: (...args: unknown[]) => mockUpdateProfile(...args),
+  readLegacyConsoleUrl: (...args: unknown[]) => mockReadLegacyConsoleUrl(...args),
 }));
 
 import * as readline from 'node:readline';
@@ -45,8 +58,11 @@ import type { IncomingMessage } from 'node:http';
 import { login } from '../../../src/commands/login';
 import { validateApiKey } from '../../../src/common/apiClient';
 import { logger } from '../../../src/common/logger';
+import { lang } from '../../../src/lang';
 
 const mockValidateApiKey = validateApiKey as jest.Mock;
+/** The lang mock returns the bare key; its calls keep the placeholder params. */
+const langMock = lang.__ as jest.Mock;
 
 /** The interactive login paths gate on stdin.isTTY; jest's stdin is not a TTY. */
 const setTty = (value: boolean | undefined): void => {
@@ -117,6 +133,7 @@ describe('login command (ADR-008)', () => {
     delete process.env.SI_CONSOLE_UI_URL;
     delete process.env.SI_CONSOLE_LINE;
     mockLoadCredentialsFile.mockReturnValue(null);
+    mockReadLegacyConsoleUrl.mockReturnValue(null);
     mockValidateApiKey.mockResolvedValue(identity());
   });
 
@@ -604,8 +621,18 @@ describe('login command (ADR-008)', () => {
       expect(logger.error).toHaveBeenCalledWith('LOGIN_TIMEOUT');
     });
 
-    it('reports a validate failure through LOGIN_KEY_INVALID and stores nothing', async () => {
+    it('reports a network validate failure without storing anything (issue #309)', async () => {
       mockValidateApiKey.mockRejectedValueOnce(new Error('validate exploded'));
+
+      await login({ siApiKey: chinaKey });
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_VALIDATE_UNREACHABLE');
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+
+    it('reports a 401 validate failure as an invalid key (issue #309)', async () => {
+      const { ApiError } = jest.requireMock('../../../src/common/apiClient');
+      mockValidateApiKey.mockRejectedValueOnce(new ApiError('denied', 401));
 
       await login({ siApiKey: chinaKey });
 
@@ -648,16 +675,15 @@ describe('login command (ADR-008)', () => {
     it('cancels when the user declines re-login', async () => {
       mockReadlineAnswers.push('n');
 
-      await login({ siApiKey: chinaKey });
+      await login({});
 
       expect(mockSaveProfile).not.toHaveBeenCalled();
     });
 
-    it('re-login proceeds and overwrites the target profile', async () => {
-      mockReadlineAnswers.push('y');
-
+    it('re-login with an explicit key proceeds without the re-auth prompt (issue #309)', async () => {
       await login({ siApiKey: chinaKey });
 
+      expect(readline.createInterface).not.toHaveBeenCalled();
       expect(mockSaveProfile).toHaveBeenCalledWith(
         'china',
         expect.objectContaining({ apiKey: chinaKey }),
@@ -678,6 +704,177 @@ describe('login command (ADR-008)', () => {
       expect(mockSaveProfile).toHaveBeenCalledWith(
         'international',
         expect.objectContaining({ apiKey: intlKey, orgSlug: 'test-org' }),
+        { activate: true },
+      );
+    });
+
+    it('shows the stored profile side when --org mismatches the key org (direction A)', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'china/example-org',
+        profiles: {
+          'china/example-org': {
+            apiKey: chinaKey,
+            orgId: 'org-1',
+            orgSlug: 'example-org',
+            orgName: 'Example Org',
+          },
+        },
+      });
+
+      await login({ siApiKey: intlKey, line: 'international', org: 'other-org' });
+
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_ORG_MISMATCH',
+        expect.objectContaining({ actual: 'test-org', expected: 'other-org' }),
+      );
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_ORG_MISMATCH_ACTIVE',
+        expect.objectContaining({ profileKey: 'china/example-org', orgName: 'Example Org' }),
+      );
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('stored profile heal (issue #309)', () => {
+    const placeholderKey = 'international/legacy-0701c503';
+    const placeholderProfile = {
+      apiKey: legacyKey,
+      orgId: 'org-1',
+      orgName: 'Test Org',
+      userEmail: 'user@test.com',
+    };
+
+    const storedPlaceholder = (key = placeholderKey) => ({
+      active: key,
+      profiles: { [key]: placeholderProfile },
+    });
+
+    const healedTo = (newKey: string) => mockUpdateProfile.mockImplementation(() => newKey);
+
+    it('heals a placeholder profile from the key segment and re-keys it', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      healedTo('international/test-org');
+
+      await login({});
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        legacyKey,
+        'https://console.serverlessinsight.com',
+      );
+      expect(mockUpdateProfile).toHaveBeenCalledWith(
+        placeholderKey,
+        legacyKey,
+        expect.objectContaining({ orgSlug: 'test-org', orgId: 'org-1', orgName: 'Test Org' }),
+      );
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_HEALED',
+        expect.objectContaining({ profileKey: 'international/test-org' }),
+      );
+    });
+
+    it('heals a legacy profile whose stored URL pins the line', async () => {
+      const chinaPlaceholderKey = 'china/legacy-0701c503';
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder(chinaPlaceholderKey));
+      mockReadLegacyConsoleUrl.mockReturnValue('https://console.serverlessinsight.cn');
+      healedTo('china/test-org');
+
+      await login({});
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        legacyKey,
+        'https://console.serverlessinsight.cn',
+      );
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_HEAL_DEBUG',
+        expect.objectContaining({ from: chinaPlaceholderKey, to: 'china/test-org' }),
+      );
+    });
+
+    it('heals a legacy profile when --line pins the line explicitly', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder('china/legacy-0701c503'));
+      mockReadLegacyConsoleUrl.mockReturnValue('http://localhost:3002');
+      healedTo('china/test-org');
+
+      await login({ line: 'china' });
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        legacyKey,
+        'https://console.serverlessinsight.cn',
+      );
+      expect(mockUpdateProfile).toHaveBeenCalled();
+    });
+
+    it('keeps the profile and explains the fix when the line cannot be determined', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      mockReadLegacyConsoleUrl.mockReturnValue('http://localhost:3002');
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_DIAG_LOCALHOST_URL',
+        expect.objectContaining({ url: 'http://localhost:3002' }),
+      );
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_HEAL_LINE_UNRESOLVED');
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
+
+    it('keeps the stored profile when the key is rejected (401)', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      const { ApiError } = jest.requireMock('../../../src/common/apiClient');
+      mockValidateApiKey.mockRejectedValueOnce(new ApiError('denied', 401));
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_HEAL_KEY_INVALID');
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
+
+    it('keeps the stored profile when the console is unreachable', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      mockValidateApiKey.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_HEAL_UNREACHABLE');
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
+
+    it('does not touch a healthy stored profile', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'china/example-org',
+        profiles: {
+          'china/example-org': {
+            apiKey: chinaKey,
+            orgId: 'org-1',
+            orgSlug: 'example-org',
+            orgName: 'Example Org',
+            userEmail: 'user@test.com',
+          },
+        },
+      });
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(mockValidateApiKey).not.toHaveBeenCalled();
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('re-entering the stored key reuses the stored line instead of the picker', async () => {
+      setTty(true);
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder('china/legacy-0701c503'));
+      mockReadLegacyConsoleUrl.mockReturnValue('https://console.serverlessinsight.cn');
+
+      await login({ siApiKey: legacyKey });
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        legacyKey,
+        'https://console.serverlessinsight.cn',
+      );
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'china',
+        expect.objectContaining({ apiKey: legacyKey }),
         { activate: true },
       );
     });

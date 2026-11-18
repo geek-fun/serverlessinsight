@@ -1094,10 +1094,30 @@ export const en = {
   LOGIN_LINE_MISMATCH:
     'The API key belongs to the {{keyLine}} line, but you are authenticating against {{line}}. Request a key from the {{line}} console — nothing was stored.',
   LOGIN_ORG_MISMATCH:
-    'Authorized org "{{actual}}" does not match --org {{expected}}. Nothing was stored.',
+    'Authorized org "{{actual}}" does not match --org {{expected}}. Nothing was stored.\nThis API key belongs to org "{{actual}}". Either:\n  - pass --org {{actual}}, or\n  - use a key issued for org "{{expected}}" in the console.',
+  LOGIN_ORG_MISMATCH_ACTIVE: 'Active profile "{{profileKey}}" is signed in as org "{{orgName}}".',
   LOGIN_NEED_LINE:
     'This API key carries no line segment. Pass --line international|china so it can be routed.',
   LOGIN_PROFILE_SAVED: '✅ Stored profile {{profileKey}} (now active) · {{userEmail}}',
+  LOGIN_DIAG_LEGACY_FILE:
+    'Stored credentials use the legacy single-profile format (consoleUrl: {{url}}).',
+  LOGIN_DIAG_LOCALHOST_URL:
+    'Stored credentials point to a non-production console ({{url}}) — likely a local dev server.',
+  LOGIN_DIAG_LEGACY_KEY: 'Stored API key has no line segment (legacy format).',
+  LOGIN_DIAG_MISSING_SLUG:
+    'Stored profile "{{profileKey}}" has no verified org slug (placeholder key).',
+  LOGIN_HEAL_DEBUG: 'healed profile {{from}} -> {{to}}',
+  LOGIN_HEALED: '✅ Healed and re-verified stored profile {{profileKey}} · {{userEmail}}',
+  LOGIN_HEAL_KEY_INVALID:
+    'The stored API key was rejected by the console (401/403). The existing profile is kept — sign in again with a new key.',
+  LOGIN_HEAL_UNREACHABLE:
+    'Could not reach the console to verify the stored credentials. The existing profile is kept — try again later.',
+  LOGIN_HEAL_LINE_UNRESOLVED:
+    'Cannot determine the console line for the stored profile. Run: si login --si-api-key <key> --line <international|china>, or remove ~/.serverlessinsight/credentials.json and sign in again.',
+  LOGIN_HEAL_SKIPPED:
+    'The stored profile could not be re-keyed automatically. Sign in again with your API key to refresh it.',
+  LOGIN_VALIDATE_UNREACHABLE:
+    'Could not reach the console to validate the API key. Nothing was stored. Check your network and try again.',
 
   LOGOUT_REVOKING: 'Revoking API key...',
   LOGOUT_DELETING_CREDENTIALS: 'Deleting stored credentials...',
@@ -1619,7 +1639,8 @@ export const en = {
   OPT_SECURITY_TOKEN: 'specify the SecurityToken',
   OPT_NO_REFRESH: 'skip live cloud probing; diff config against state only (no drift detection)',
   OPT_SI_API_KEY: 'ServerlessInsight API key (overrides SI_API_KEY env)',
-  OPT_ORG: 'Console org slug (disambiguates when several orgs match)',
+  OPT_ORG:
+    'Console org slug (lowercase letters, digits, hyphens; e.g. my-org). Assertion: the key must belong to this org',
   OPT_LINE: 'Console line: international | china',
   OPT_AUTO_APPROVE: 'skip interactive approval of plan before deploying',
   OPT_PARAMETER: 'override parameters',
