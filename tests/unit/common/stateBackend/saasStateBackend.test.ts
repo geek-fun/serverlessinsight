@@ -222,8 +222,6 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       await local.loadState();
 
       expect(mockApiClient.get).toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
-      // Issue #309: state commands never write credentials — the fetched slug
-      // stays in memory for this run; only `si login` persists a profile.
       expect(updateProfile).not.toHaveBeenCalled();
       expect(mockApiClient.post).toHaveBeenCalled();
     });
@@ -423,9 +421,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       const result = await local.loadState();
 
-      // The slug stays in memory (issue #309: no credentials writes from state
-      // commands), and the state must not claim an org id that was never
-      // verified — the D-6 anchor stays honest.
+      // The state must not claim an org id that was never verified — the D-6 anchor stays honest.
       expect(updateProfile).not.toHaveBeenCalled();
       expect(mockApiClient.post).toHaveBeenCalled();
       expect(result.orgId).toBe('');

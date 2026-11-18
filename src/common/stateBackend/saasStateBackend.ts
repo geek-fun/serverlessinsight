@@ -221,9 +221,7 @@ export const createSaasStateBackend = async (
     assertValidatedOrg(targetOrg, orgSlug);
 
     const orgId = fetched?.orgId ?? local.orgId;
-    // Issue #309: state commands never write the credentials file. The org
-    // identity fetched here stays in memory for this run; `si login` is the
-    // only entry that persists (re-keys / heals) a stored profile.
+    // State commands never write credentials; the identity is for this run only.
     resolvedIdentity = { orgId, orgSlug };
     knownOrgId = orgId ?? knownOrgId;
     return resolvedIdentity;

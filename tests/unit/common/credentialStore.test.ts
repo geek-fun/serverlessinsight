@@ -190,7 +190,6 @@ describe('credentialStore (ADR-008 v2)', () => {
       const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
       expect(written.active).toBe('china/example-org');
       expect(written.profiles['china/example-org']).toEqual(chinaProfile);
-      // Atomic replace (issue #309): a private 0600 temp file renamed into place.
       const [tmpPath, , options] = mockFs.writeFileSync.mock.calls[0] as [
         string,
         string,

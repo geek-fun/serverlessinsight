@@ -114,11 +114,7 @@ export const loadCredentialsFile = (): CredentialsFile | null => {
   }
 };
 
-/**
- * Raw `consoleUrl` of a legacy (v1) credentials file, read without the
- * in-memory heal. Login's heal flow uses it to pin the line; null for v2
- * files, missing files, or unparsable content.
- */
+/** Raw legacy-file consoleUrl, bypassing the in-memory heal; null for v2 files. */
 export const readLegacyConsoleUrl = (): string | null => {
   const credPath = getCredentialsPath();
   if (!fs.existsSync(credPath)) return null;
@@ -134,15 +130,13 @@ const writeFile = (file: CredentialsFile): void => {
   ensureCredentialsDir();
   const credPath = getCredentialsPath();
   const serialized = JSON.stringify(file, null, 2);
-  // Issue #309: skip the write (and the mtime bump) when nothing changed —
-  // heal and identity-refresh paths must not touch an already-healthy file.
+  // Skip the write (and the mtime bump) when nothing changed.
   try {
     if (fs.readFileSync(credPath, 'utf-8') === serialized) return;
   } catch {
     // First write (or unreadable file) — fall through and create it.
   }
-  // Atomic replace: write a private temp file, then rename, so a crash
-  // mid-write can never leave a truncated credentials.json behind.
+  // Atomic replace: a crash mid-write never truncates credentials.json.
   const tmp = `${credPath}.tmp-${process.pid}-${crypto.randomUUID()}`;
   try {
     fs.writeFileSync(tmp, serialized, { encoding: 'utf-8', mode: 0o600 });
@@ -174,7 +168,7 @@ export const saveProfile = (
   writeFile({ active, profiles });
 };
 
-/** Validate-response patch applied by updateProfile; module-private shape. */
+/** Validate-response patch applied by updateProfile. */
 type ProfilePatch = {
   readonly orgSlug: string;
   readonly orgId?: string;
@@ -182,12 +176,7 @@ type ProfilePatch = {
   readonly userEmail?: string;
 };
 
-/**
- * Re-key a profile after verifying its slug with the same API key. The patch
- * fields come from the validate response, which is authoritative (issue #309).
- * Returns the new profile key, or null when nothing was applied — the caller
- * (login heal) must not assume success.
- */
+/** Re-key a verified profile; returns the new key, or null when nothing was applied. */
 export const updateProfile = (
   profileKey: string,
   apiKey: string,

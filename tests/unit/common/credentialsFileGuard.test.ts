@@ -1,9 +1,4 @@
-/**
- * Issue #309: integration-level proof on a real filesystem that an explicit
- * key (flag/env) never touches ~/.serverlessinsight/credentials.json — the
- * file is not read, and its content and mtime stay identical. Runners with a
- * shared or cached HOME are the target scenario.
- */
+/** Issue #309: real-fs proof that an explicit key never reads or writes the credentials file. */
 jest.mock('../../../src/common/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
@@ -40,8 +35,7 @@ const seedCredentials = (content: unknown): void => {
 
 const snapshot = () => {
   const stat = fs.statSync(credentialsPath());
-  // Read without an encoding so the snapshot never pollutes the
-  // (path, 'utf-8') spy assertion below.
+  // Read without an encoding: the snapshot must not pollute the (path, 'utf-8') spy assertion.
   return { content: fs.readFileSync(credentialsPath()).toString('utf-8'), mtimeMs: stat.mtimeMs };
 };
 
@@ -74,8 +68,7 @@ describe('credentials file guard with a real HOME (issue #309)', () => {
         },
       },
     });
-    // Spy on the real fs module the credential store uses — the same module
-    // instance, so every read of the credentials file is observable here.
+    // The credential store reads through this same fs module instance.
     readSpy = jest.spyOn(fs, 'readFileSync');
   });
 
@@ -127,8 +120,7 @@ describe('credentials file guard with a real HOME (issue #309)', () => {
     expect(ctx.apiKey).toBe(chinaKey);
     expect(ctx.profileKey).toBe('china/example-org');
     expect(ctx.orgSlug).toBe('example-org');
-    // The spy genuinely observes the read, so the guard assertions above are
-    // meaningful rather than vacuous.
+    // The spy genuinely observes the read, so the guard assertions are not vacuous.
     expect(readSpy).toHaveBeenCalledWith(credentialsPath(), 'utf-8');
   });
 });

@@ -82,10 +82,7 @@ export const resolveLineContext = async (
   const explicitKey = params.siApiKey ?? process.env.SI_API_KEY;
   const keySource =
     params.siApiKey !== undefined ? 'flag' : explicitKey !== undefined ? 'env' : 'profile';
-  // Issue #309: a flag/env key is self-contained CI identity. The credentials
-  // file is never read and no stored profile is selected, so a runner with a
-  // shared or cached HOME can neither inherit a local identity nor have one
-  // attached to its key — the validate roundtrip is the only identity source.
+  // A flag/env key is self-contained CI identity: never read credentials or select a profile.
   const file = keySource === 'profile' ? loadCredentialsFile() : null;
   const profiles = file?.profiles ?? {};
   const activeKey = file?.active;
@@ -157,9 +154,7 @@ export const resolveLineContext = async (
     );
   }
 
-  // Issue #309: an explicit key never borrows a stored profile's identity, so
-  // this fallback only fires for profile-sourced runs (keyLine is impossible
-  // here — a key segment implies an explicit key, which skips the file above).
+  // Only profile-sourced runs land here — an explicit key never borrows a profile.
   if (!profileKey && !targetSlug && active && activeKey && active.line === line) {
     profileKey = activeKey;
   }

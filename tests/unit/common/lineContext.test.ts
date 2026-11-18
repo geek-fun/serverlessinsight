@@ -124,7 +124,6 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
       expect(result).not.toHaveProperty('orgSlug');
       expect(result).not.toHaveProperty('orgName');
       expect(result).not.toHaveProperty('userEmail');
-      // Issue #309: an explicit key never reads the credentials file.
       expect(mockLoadCredentialsFile).not.toHaveBeenCalled();
     },
   );

@@ -63,18 +63,13 @@ const promptLinePicker = async (): Promise<ConsoleLineName> => {
   }
 };
 
-/**
- * The stored active profile as seen by login's heal flow (issue #309).
- * `file` keeps the loaded shape; `readLegacyConsoleUrl()` re-reads the raw
- * file when the legacy `consoleUrl` is needed for line resolution.
- */
+/** The active stored profile, for login's heal flow (issue #309). */
 type StoredProfile = {
   readonly file: CredentialsFile;
   readonly profileKey: string;
   readonly profile: ConsoleProfile;
 };
 
-/** Diagnostics for a stored profile that is stale or points somewhere odd. */
 const storedAnomalies = (stored: StoredProfile): string[] => {
   const anomalies: string[] = [];
   const legacyUrl = readLegacyConsoleUrl();
@@ -93,12 +88,7 @@ const storedAnomalies = (stored: StoredProfile): string[] => {
   return anomalies;
 };
 
-/**
- * Issue #309 heal matrix: pin the stored profile's line from its key segment,
- * then an explicit `--line`, then the stored legacy URL. A legacy file's
- * in-memory profile key prefix is a fabricated default, so for legacy files
- * only those three sources are trusted.
- */
+/** Pin the stored profile's line; a legacy file's in-memory prefix is a fabricated default. */
 const storedLineForHeal = (
   stored: StoredProfile,
   flagLine?: ConsoleLineName | null,
@@ -111,12 +101,7 @@ const storedLineForHeal = (
   return splitProfileKey(stored.profileKey)?.line ?? null;
 };
 
-/**
- * Issue #309 defect 1: re-login heals a stale stored profile in place —
- * re-key it to `line/orgSlug` and refresh the identity from the validate
- * response (which is authoritative). The stored profile is kept untouched on
- * any failure. Returns true when the profile now verifies healthy.
- */
+/** Re-key the stored profile to line/orgSlug after validate; false keeps it untouched. */
 const healStoredProfile = async (
   stored: StoredProfile,
   flagLine?: ConsoleLineName | null,
@@ -198,9 +183,7 @@ const finalizeLogin = (
     return false;
   }
   if (orgFlag && identity.orgSlug && identity.orgSlug !== orgFlag) {
-    // Issue #309 (direction A): `--org` is an expected-org assertion. The
-    // error names both fix paths and, when a profile is stored, shows the
-    // active side of the conflict too.
+    // Issue #309: --org is an assertion — name both fix paths and the stored side.
     logger.error(lang.__('LOGIN_ORG_MISMATCH', { actual: identity.orgSlug, expected: orgFlag }));
     const stored = loadCredentialsFile();
     const storedKey = stored?.active;
@@ -265,8 +248,7 @@ const loginWithKey = async (
     if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
       logger.error(lang.__('LOGIN_KEY_INVALID'));
     } else {
-      // Issue #309: a network/5xx failure says nothing about the key itself —
-      // nothing is stored and any existing profile stays untouched.
+      // A network/5xx failure says nothing about the key itself.
       logger.error(lang.__('LOGIN_VALIDATE_UNREACHABLE'));
     }
     logger.debug(error instanceof Error ? error.message : String(error));
@@ -437,8 +419,7 @@ export const login = async (options: {
       logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine, line: flagLine }));
       return;
     }
-    // Issue #309: re-entering the stored key skips the line picker — the
-    // stored profile (its composite prefix or legacy URL) already pins the line.
+    // Re-entering the stored key: its profile already pins the line.
     const storedLine = (() => {
       if (!stored || stored.profile.apiKey !== key || parseApiKeyLine(key)) return null;
       const legacyUrl = readLegacyConsoleUrl();
@@ -463,10 +444,7 @@ export const login = async (options: {
     return;
   }
 
-  // Issue #309 defect 1: without a new key, re-login auto-heals a stale
-  // stored profile (re-key + identity refresh) instead of nagging about it.
-  // Unhealable states (dead key, unreachable console, undeterminable line)
-  // keep the profile and fall through to a fresh sign-in below.
+  // Without a new key, re-login heals a stale stored profile in place (issue #309).
   const anomalies = stored ? storedAnomalies(stored) : [];
   if (stored && anomalies.length > 0) {
     anomalies.forEach((anomaly) => logger.warn(anomaly));
@@ -474,7 +452,6 @@ export const login = async (options: {
     if (healed) return;
   }
 
-  // Check if already logged in — only a healthy stored profile asks.
   if (stored && anomalies.length === 0 && process.stdin.isTTY === true) {
     const answer = await ask(
       lang.__('LOGIN_ALREADY_LOGGED_IN', {
