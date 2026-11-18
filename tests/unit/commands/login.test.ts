@@ -735,6 +735,33 @@ describe('login command (ADR-008)', () => {
     });
   });
 
+  describe('explicit key edge cases (issue #309 coverage)', () => {
+    it('rejects a malformed key before any network call', async () => {
+      await login({ siApiKey: 'not-a-key', line: 'china' });
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_KEY_FORMAT_INVALID');
+      expect(mockValidateApiKey).not.toHaveBeenCalled();
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+
+    it('warns when the browser opener rejects asynchronously', async () => {
+      setTty(true);
+      mockReadlineAnswers.push('1');
+      mockReadlineAnswers.push('1');
+      setupBrowserLogin(() => Promise.reject(new Error('popup blocked')));
+
+      const loginPromise = login({});
+      const handler = await waitForCallbackServer();
+      await handler({ url: '/callback?api_key=key' }, { writeHead: jest.fn(), end: jest.fn() });
+      await loginPromise;
+
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_BROWSER_UNAVAILABLE',
+        expect.objectContaining({ url: expect.stringContaining('/cli/authorize') }),
+      );
+    });
+  });
+
   describe('stored profile heal (issue #309)', () => {
     const placeholderKey = 'international/legacy-0701c503';
     const placeholderProfile = {
@@ -877,6 +904,61 @@ describe('login command (ADR-008)', () => {
         expect.objectContaining({ apiKey: legacyKey }),
         { activate: true },
       );
+    });
+
+    it('reuses the composite profile key prefix when no legacy URL exists', async () => {
+      setTty(true);
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder('china/legacy-0701c503'));
+      mockReadLegacyConsoleUrl.mockReturnValue(null);
+
+      await login({ siApiKey: legacyKey });
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        legacyKey,
+        'https://console.serverlessinsight.cn',
+      );
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'china',
+        expect.objectContaining({ apiKey: legacyKey }),
+        { activate: true },
+      );
+    });
+
+    it('refuses to heal a stored key that fails the format check', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder('international/legacy-0701c503'));
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'international/legacy-0701c503',
+        profiles: {
+          'international/legacy-0701c503': { ...placeholderProfile, apiKey: 'not-a-key' },
+        },
+      });
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(mockValidateApiKey).not.toHaveBeenCalled();
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
+
+    it('keeps the profile when the validate region disagrees with the healed line', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      mockValidateApiKey.mockResolvedValueOnce({ ...identity(), region: 'cn' });
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_LINE_MISMATCH',
+        expect.objectContaining({ keyLine: 'cn', line: 'international' }),
+      );
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
+
+    it('explains the fix when the profile cannot be re-keyed (heal skipped)', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      mockUpdateProfile.mockReturnValue(null);
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_HEAL_SKIPPED');
     });
   });
 });

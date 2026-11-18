@@ -9,7 +9,6 @@ import {
   normalizeLineName,
   parseApiKeyLine,
   splitProfileKey,
-  toProfileKey,
 } from './consoleLines';
 import { findProfilesBySlug, loadCredentialsFile } from './credentialStore';
 
@@ -158,12 +157,11 @@ export const resolveLineContext = async (
     );
   }
 
-  if (!profileKey && !targetSlug && active && activeKey) {
-    if (active.line === line) {
-      profileKey = activeKey;
-    } else if (keyLine) {
-      profileKey = toProfileKey(line, active.orgSlug);
-    }
+  // Issue #309: an explicit key never borrows a stored profile's identity, so
+  // this fallback only fires for profile-sourced runs (keyLine is impossible
+  // here — a key segment implies an explicit key, which skips the file above).
+  if (!profileKey && !targetSlug && active && activeKey && active.line === line) {
+    profileKey = activeKey;
   }
   // A legacy active profile has no verified slug until the first validate call.
   if (!profileKey && activeKey && active?.line === line && !profiles[activeKey]?.orgSlug) {
