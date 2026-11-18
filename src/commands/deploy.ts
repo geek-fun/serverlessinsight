@@ -11,7 +11,15 @@ import {
   ProviderEnum,
   toPersistedState,
 } from '../common';
+import { StateBackendType } from '../types';
 import { createStateBackend } from '../common/stateBackend';
+import {
+  beginConfigSession,
+  endConfigSession,
+  collectConfigRefs,
+  applyConfigResolution,
+} from '../common/configSession';
+import { resolveConfigRefsViaSaas } from '../common/configClient';
 import { parseYaml, revalYaml } from '../parser';
 import { generateTencentPlan, displayPlan } from '../stack/scfStack';
 import { generateAliyunPlan } from '../stack/aliyunStack';
@@ -70,7 +78,38 @@ export const deploy = async (options: {
   );
 
   const context = getContext();
+
+  // Epic #53 P1: config-set references resolve in a two-pass evaluation —
+  // calcValue swaps sentinels, the batch resolve fills values, and
+  // applyConfigResolution substitutes them (failing closed on missing refs).
+  const configRefs = collectConfigRefs(rawIac);
+  const session = beginConfigSession();
+  if (configRefs.length > 0) {
+    if (rawIac.backend?.type !== StateBackendType.SAAS) {
+      endConfigSession();
+      throw new Error(lang.__('CONFIG_RESOLVE_REQUIRES_SAAS'));
+    }
+    logger.info(lang.__('CONFIG_RESOLVING_REFS', { count: String(configRefs.length) }));
+    const resolved = await resolveConfigRefsViaSaas(configRefs, {
+      stage: context.stage,
+      siApiKey: options.siApiKey,
+      declaredOrg: rawIac.org,
+      org: options.org,
+      line: options.line,
+    });
+    for (const [ref, value] of resolved) {
+      session.resolved.set(ref, value);
+    }
+  }
+
   const iac = revalYaml(iacLocation, context);
+  // Applied meta (functionEnvRefs/databasePasswordRefs/secretValues) is stored
+  // module-level for the sanitization pipeline (envRedaction/planRedaction).
+  applyConfigResolution(iac);
+  endConfigSession();
+  if (configRefs.length > 0) {
+    logger.info(lang.__('CONFIG_REFS_RESOLVED', { count: String(configRefs.length) }));
+  }
 
   setIac(iac);
 
@@ -96,6 +135,23 @@ export const deploy = async (options: {
   // executors can emit per-resource deployment events via context.reportEvent.
   if (backend.reportEvent) {
     context.reportEvent = backend.reportEvent;
+  }
+
+  // Epic #53 P2: inject the runtime config token + console URL so functions can
+  // read the merged config snapshot without redeploying. The state records a
+  // masked value ([REDACTED] for the token) and drift compares live-vs-desired,
+  // so redeploys stay noop until the runtime key actually rotates.
+  if (configRefs.length > 0 && backend.issueRuntimeConfigToken) {
+    const runtimeConfig = await backend.issueRuntimeConfigToken();
+    for (const fn of iac.functions ?? []) {
+      fn.environment = {
+        ...(fn.environment ?? {}),
+        SI_CONFIG_TOKEN: runtimeConfig.token,
+        SI_CONSOLE_URL: runtimeConfig.consoleUrl,
+      };
+    }
+    setIac(iac);
+    logger.info(lang.__('CONFIG_RUNTIME_TOKEN_INJECTED'));
   }
 
   logger.info(lang.__('GENERATING_PLAN'));

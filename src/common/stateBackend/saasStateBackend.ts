@@ -14,6 +14,7 @@ import {
 import type { LockOptions } from '../../types';
 import { StateFile } from '../../types';
 import { migrateState, toPersistedState, emptyScopedState } from '../stateManager';
+import { redactPayloadDeep } from '../envRedaction';
 import { normalizeScope } from '../stateScope';
 import { EventQueue, DeploymentEventRecord } from '../eventQueue';
 import { lang } from '../../lang';
@@ -169,13 +170,14 @@ export const createSaasStateBackend = async (
     return probedCapabilities;
   };
 
-  /** ADR-005: enqueue a typed event for the active deployment (durable JSONL + batch flush). */
+  /** ADR-005: enqueue a typed event for the active deployment (durable JSONL + batch flush).
+   * Epic #53 P1: the event stream never carries plaintext secret values. */
   const reportEvent = (event: DeploymentEventRecord): void => {
     ensureEventQueue();
     if (!eventQueue || !currentDeploymentId) return;
     sequenceCounter += 1;
     eventQueue.report({
-      ...event,
+      ...redactPayloadDeep(event),
       deploymentId: currentDeploymentId,
       sequence: event.sequence ?? sequenceCounter,
     });
@@ -734,6 +736,19 @@ export const createSaasStateBackend = async (
     flushEvents: async (): Promise<void> => {
       await eventQueue?.flushOnExit();
     },
+    issueRuntimeConfigToken: async (): Promise<{ token: string; consoleUrl: string }> => {
+      if (!resolvedServiceId) {
+        throw new Error(lang.__('CONFIG_RUNTIME_KEY_NOT_READY'));
+      }
+      // The key binding rides on the deploy key's own scope (org + service +
+      // stage); the SaaS rejects stage mismatches (issue #53 P2).
+      const response = await client.post<{ fullKey: string; rotated: boolean }>(
+        '/api/v1/runtime-keys',
+        { stage: normalized.stage },
+      );
+      return { token: response.fullKey, consoleUrl };
+    },
+
     replayOrphanedEvents: async (): Promise<void> => {
       // Replays queue files from ANY previous run — each file carries its own
       // deploymentId, and sendBatch targets the deployment embedded in the event.

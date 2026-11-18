@@ -69,6 +69,13 @@ export type StateBackend = {
   flushEvents?: () => Promise<void>;
   /** ADR-005: replay event-queue files orphaned by a previous interrupted run. */
   replayOrphanedEvents?: () => Promise<void>;
+  /**
+   * Epic #53 P2: mint/rotate the runtime key (SI_CONFIG_TOKEN) for the
+   * deployment's service+stage using the backend's own client and resolved
+   * identity. Available only on the SaaS backend and only after the
+   * deployment identity resolved (post probeWriteReadiness).
+   */
+  issueRuntimeConfigToken?: () => Promise<{ token: string; consoleUrl: string }>;
 };
 
 export type { LockMetadata };

@@ -5,6 +5,7 @@ import { get } from 'lodash';
 import { parseYaml } from '../parser';
 import { logger } from './logger';
 import { lang } from '../lang';
+import { activeConfigSession, markExactRef } from './configSession';
 
 /* istanbul ignore next */
 export const resolveCode = (location: string): string => {
@@ -62,9 +63,10 @@ export const calcValue = <T>(
   const containsStage = rawValue.match(/\$\{ctx.stage}/);
   const containsVar = rawValue.match(/\$\{vars.\w+}/);
   const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
+  const containsConfigRef = rawValue.match(/\$\{config_sets\.[^}]+\}/);
 
   // Check if the entire value is a single template reference (for type inference)
-  const isExactTemplateRef = /^\$\{(vars|stages|ctx)\.[^}]+\}$/.test(rawValue);
+  const isExactTemplateRef = /^\$\{(vars|stages|ctx|config_sets)\.[^}]+\}$/.test(rawValue);
 
   let value = rawValue;
 
@@ -108,6 +110,25 @@ export const calcValue = <T>(
       }
       return stageValue || '';
     });
+  }
+
+  // Epic #53 P1: config-set refs swap for sentinels and register in the active
+  // session; the batch resolve + applyConfigResolution substitute them later.
+  // Session-less runs (validate/show) keep the raw template. Scalar inference
+  // is deferred — the sentinel is not the final value.
+  if (containsConfigRef?.length) {
+    const session = activeConfigSession();
+    if (!session) {
+      return value as T;
+    }
+    let sentinelValue = value;
+    for (const match of value.matchAll(/\$\{config_sets\.([^}]+)\}/g)) {
+      const ref = match[1]!;
+      const placeholder = session.placeholderOf(ref);
+      markExactRef(ref, match[0] === value);
+      sentinelValue = sentinelValue.split(match[0]).join(placeholder);
+    }
+    return sentinelValue as T;
   }
 
   return inferType<T>(value, inferScalar && isExactTemplateRef);
