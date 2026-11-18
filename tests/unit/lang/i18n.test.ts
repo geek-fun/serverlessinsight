@@ -122,3 +122,16 @@ describe('i18n Language Support', () => {
     });
   });
 });
+
+describe('catalog key parity', () => {
+  // A key present in only one catalog silently renders as the raw key name in
+  // the other locale (shipped that way for OPT_LINE / OPT_ORG in v0.9.9).
+  it('every English key exists in Chinese and vice versa', async () => {
+    const { en } = await import('../../../src/lang/en');
+    const { zhCN } = await import('../../../src/lang/zh-CN');
+    const enKeys = Object.keys(en).sort();
+    const zhKeys = Object.keys(zhCN as Record<string, string>).sort();
+    expect(enKeys.filter((key) => !zhKeys.includes(key))).toEqual([]);
+    expect(zhKeys.filter((key) => !enKeys.includes(key))).toEqual([]);
+  });
+});

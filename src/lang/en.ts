@@ -1619,6 +1619,8 @@ export const en = {
   OPT_SECURITY_TOKEN: 'specify the SecurityToken',
   OPT_NO_REFRESH: 'skip live cloud probing; diff config against state only (no drift detection)',
   OPT_SI_API_KEY: 'ServerlessInsight API key (overrides SI_API_KEY env)',
+  OPT_ORG: 'Console org slug (disambiguates when several orgs match)',
+  OPT_LINE: 'Console line: international | china',
   OPT_AUTO_APPROVE: 'skip interactive approval of plan before deploying',
   OPT_PARAMETER: 'override parameters',
   OPT_DEBUG: 'enable debug mode',
