@@ -138,6 +138,10 @@ const loginWithKey = async (
 };
 
 const loginWithBrowser = async (line: ConsoleLineName, orgFlag?: string): Promise<boolean> => {
+  // Undocumented test hook: lets the CLI test suite exercise the browser-login
+  // timeout without waiting five real minutes (same precedent as SI_CONSOLE_URL).
+  // Read per call so tests can shorten it after module load.
+  const loginTimeoutMs = Number(process.env.SI_LOGIN_TIMEOUT_MS ?? 300_000);
   const randomPort = Math.floor(Math.random() * 79) + 54321; // 54321-54399
   let apiKey: string | null = null;
 
@@ -270,7 +274,7 @@ const loginWithBrowser = async (line: ConsoleLineName, orgFlag?: string): Promis
         logger.error(lang.__('LOGIN_TIMEOUT'));
         resolve(false);
       }
-    }, 300_000);
+    }, loginTimeoutMs);
   });
 };
 

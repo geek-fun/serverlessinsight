@@ -509,6 +509,110 @@ describe('login command (ADR-008)', () => {
       );
     });
 
+    it('answers the CORS preflight for POST /callback with 204 and honored headers', async () => {
+      process.env.SI_LOGIN_TIMEOUT_MS = '60';
+      mockReadlineAnswers.push('1');
+      mockReadlineAnswers.push('1');
+      setupBrowserLogin();
+
+      const loginPromise = login({});
+      const handler = await waitForCallbackServer();
+      const response = { writeHead: jest.fn(), end: jest.fn() };
+      await handler(
+        {
+          url: '/callback',
+          method: 'OPTIONS',
+          headers: { origin: 'https://console.serverlessinsight.com' },
+        } as unknown as IncomingMessage,
+        response,
+      );
+
+      expect(response.writeHead).toHaveBeenCalledWith(
+        204,
+        expect.objectContaining({
+          'Access-Control-Allow-Origin': 'https://console.serverlessinsight.com',
+          'Access-Control-Allow-Methods': 'POST',
+        }),
+      );
+      expect(response.end).toHaveBeenCalled();
+      // Nothing was authorized; the shortened timeout closes the flow out.
+      await expect(loginPromise).resolves.toBeUndefined();
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_TIMEOUT');
+    });
+
+    it('rejects a POST from a foreign origin with 403 and stores nothing', async () => {
+      process.env.SI_LOGIN_TIMEOUT_MS = '60';
+      mockReadlineAnswers.push('1');
+      mockReadlineAnswers.push('1');
+      setupBrowserLogin();
+
+      const loginPromise = login({});
+      const handler = await waitForCallbackServer();
+      const response = { writeHead: jest.fn(), end: jest.fn() };
+      await handler(
+        {
+          url: '/callback',
+          method: 'POST',
+          headers: { origin: 'https://evil.example.com' },
+          on: (event: string, cb: (chunk?: unknown) => void) => {
+            if (event === 'data') cb(JSON.stringify({ api_key: intlKey }));
+            if (event === 'end') cb();
+          },
+        } as unknown as IncomingMessage,
+        response,
+      );
+
+      expect(response.writeHead).toHaveBeenCalledWith(
+        403,
+        expect.objectContaining({ Vary: 'Origin' }),
+      );
+      await expect(loginPromise).resolves.toBeUndefined();
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_TIMEOUT');
+    });
+
+    it('treats an unparsable POST body as an absent key and keeps waiting', async () => {
+      process.env.SI_LOGIN_TIMEOUT_MS = '60';
+      mockReadlineAnswers.push('1');
+      mockReadlineAnswers.push('1');
+      setupBrowserLogin();
+
+      const loginPromise = login({});
+      const handler = await waitForCallbackServer();
+      const response = { writeHead: jest.fn(), end: jest.fn() };
+      await handler(
+        {
+          url: '/callback',
+          method: 'POST',
+          headers: { origin: 'https://console.serverlessinsight.com' },
+          on: (event: string, cb: (chunk?: unknown) => void) => {
+            if (event === 'data') cb('not-json{');
+            if (event === 'end') cb();
+          },
+        } as unknown as IncomingMessage,
+        response,
+      );
+
+      expect(response.writeHead).toHaveBeenCalledWith(200, {
+        'Access-Control-Allow-Origin': 'https://console.serverlessinsight.com',
+        'Content-Type': 'text/plain',
+        Vary: 'Origin',
+      });
+      expect(response.end).toHaveBeenCalledWith('Waiting for authorization...');
+      await expect(loginPromise).resolves.toBeUndefined();
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_TIMEOUT');
+    });
+
+    it('reports a validate failure through LOGIN_KEY_INVALID and stores nothing', async () => {
+      mockValidateApiKey.mockRejectedValueOnce(new Error('validate exploded'));
+
+      await login({ siApiKey: chinaKey });
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_KEY_INVALID');
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+
     it('warns when the browser opener throws synchronously', async () => {
       mockReadlineAnswers.push('1');
       mockReadlineAnswers.push('1');
