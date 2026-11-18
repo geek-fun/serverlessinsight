@@ -1,4 +1,12 @@
 import type { ResourceAttributes, ResourceState, StageState } from '../types';
+import {
+  configRefMarker,
+  getAppliedConfigMeta,
+  isConfigRefMarker,
+  parseConfigRefMarker,
+} from './configSession';
+
+export { isConfigRefMarker };
 
 const SECRET_ENV_KEY =
   /secret|password|passwd|token|credential|api[-_]?key|access[-_]?key|private|cert(?![a-z])/i;
@@ -11,22 +19,52 @@ const isLegacyFingerprint = (value: unknown): boolean =>
   typeof value === 'string' && LEGACY_FINGERPRINT.test(value);
 
 export const isRedactedEnvValue = (value: unknown): boolean =>
-  value === REDACTED_ENV_VALUE || isLegacyFingerprint(value);
+  value === REDACTED_ENV_VALUE || isLegacyFingerprint(value) || isConfigRefMarker(value);
 
 export const isSensitiveEnvEntry = (key: string, value: unknown): boolean =>
   SECRET_ENV_KEY.test(key) ||
   isLegacyFingerprint(value) ||
+  isConfigRefMarker(value) ||
   (typeof value === 'string' && CREDENTIAL_URL.test(value.trim()));
+
+/**
+ * A value resolved from a secret config-set ref this run → its `cfgref:` state
+ * marker. Value-based matching covers concatenated secrets too (issue #53 P1).
+ */
+export const sessionMarkerFor = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const meta = getAppliedConfigMeta();
+  const ref = meta?.refByValue.get(value);
+  return ref ? configRefMarker(ref) : null;
+};
+
+/** The provenance suffix for plan display: `*** (config_sets.db.password@v3 → v5)`. */
+export const markerProvenance = (value: string, previous?: string): string | null => {
+  const after = parseConfigRefMarker(value);
+  if (!after) return null;
+  const before = previous ? parseConfigRefMarker(previous) : null;
+  if (
+    before &&
+    before.configRef === after.configRef &&
+    before.versionNumber !== after.versionNumber
+  ) {
+    return `*** (${after.configRef}@v${before.versionNumber} → v${after.versionNumber})`;
+  }
+  return `*** (${after.configRef}@v${after.versionNumber})`;
+};
 
 export const redactEnvironmentOrEmpty = (
   environment?: Record<string, string | undefined>,
 ): Record<string, string> =>
   Object.fromEntries(
-    Object.entries(environment ?? {}).flatMap(([key, value]) =>
-      value === undefined
-        ? []
-        : [[key, isSensitiveEnvEntry(key, value) ? REDACTED_ENV_VALUE : value]],
-    ),
+    Object.entries(environment ?? {}).flatMap(([key, value]) => {
+      if (value === undefined) return [];
+      const marker = sessionMarkerFor(value);
+      if (marker) return [[key, marker]];
+      // An already-markerred value IS the redacted form — keep it.
+      if (isConfigRefMarker(value)) return [[key, value]];
+      return [[key, isSensitiveEnvEntry(key, value) ? REDACTED_ENV_VALUE : value]];
+    }),
   );
 
 export const readEnvironment = (value: unknown): Record<string, unknown> | undefined =>
@@ -45,12 +83,51 @@ export const redactEnvironmentAttributes = <T extends ResourceAttributes>(
   const previous = readEnvironment(before?.environment);
   const entries = Object.entries(environment);
   const redacted = entries.map(([key, value]) => {
+    const marker = sessionMarkerFor(value);
+    if (marker) {
+      const previousMarker =
+        previous && Object.hasOwn(previous, key) && typeof previous[key] === 'string'
+          ? previous[key]
+          : undefined;
+      const provenance = markerProvenance(marker, previousMarker);
+      // Plan paths (with `before`) show version provenance; state paths keep
+      // the bare marker so drift can substitute the live value.
+      return [key, previous ? (provenance ?? marker) : marker] as const;
+    }
+    if (isConfigRefMarker(value)) {
+      // With a `before` this is a plan diff — show version provenance; state
+      // paths keep the bare marker (drift substitutes the live value).
+      const provenance =
+        previous && Object.hasOwn(previous, key) && typeof previous[key] === 'string'
+          ? markerProvenance(value, previous[key] as string)
+          : null;
+      return [key, previous ? (provenance ?? value) : value] as const;
+    }
     if (!isSensitiveEnvEntry(key, value)) return [key, value] as const;
     const changed = previous && Object.hasOwn(previous, key) && previous[key] !== value;
     return [key, changed ? REDACTED_CHANGED : REDACTED_ENV_VALUE] as const;
   });
   if (redacted.every(([, value], i) => value === entries[i][1])) return attributes;
   return { ...attributes, environment: Object.fromEntries(redacted) };
+};
+
+/** Deep redaction for arbitrary payloads (deployment events, error details):
+ * any string matching a secret value resolved this run becomes [REDACTED]
+ * (issue #53 P1 — the event stream never carries plaintext secrets). */
+export const redactPayloadDeep = <T>(payload: T): T => {
+  const meta = getAppliedConfigMeta();
+  if (!meta || meta.secretValues.size === 0) return payload;
+  const walk = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      return meta.secretValues.has(value) ? REDACTED_ENV_VALUE : value;
+    }
+    if (Array.isArray(value)) return value.map(walk);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, walk(v)]));
+    }
+    return value;
+  };
+  return walk(payload) as T;
 };
 
 const redactResourceEnvironment = (resource: ResourceState): ResourceState => {

@@ -1648,6 +1648,51 @@ export const en = {
     'Console line: {{values}}. Omitted, it is inferred from the API key line segment, the yml org, the active profile, or an interactive prompt',
   HELP_ROOT_EXAMPLES:
     'Typical workflow:\n  si login                                        authenticate, then the profile is stored locally\n  si diff -f serverlessinsight.yml -s prod        preview changes before deploying\n  si deploy -f serverlessinsight.yml -s prod      deploy the stack\n  si show                                         inspect what is deployed\n  si destroy                                      tear the stack down\n\nSaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.',
+  // ── si config (epic #53 P1) ──
+  CMD_CONFIG_LIST_DESC: 'List config sets for the yaml app',
+  CMD_CONFIG_SET_DESC:
+    'Create or update a config item (value via hidden prompt or --stdin; never --value)',
+  CMD_CONFIG_VERSIONS_DESC: 'List versions of a config set',
+  CMD_CONFIG_RELEASE_DESC: 'Move the latest tag to a version (release; a lower version = rollback)',
+  CMD_CONFIG_TAG_DESC: 'Attach a named tag to a version',
+  CMD_CONFIG_DELETE_DESC: 'Remove a config item from the latest version',
+  OPT_CONFIG_TYPE: 'Item type: string | number | boolean | json | yaml | text | secret',
+  OPT_CONFIG_STDIN: 'Read the value from stdin instead of the hidden prompt',
+  OPT_CONFIG_VERSION: 'Target version number',
+  OPT_CONFIG_TAG: 'Tag name to attach',
+  CONFIG_SET_VALUE_PROMPT: 'Value (hidden input): ',
+  CONFIG_SET_REF_INVALID: 'Config reference "{{ref}}" must be <name>.<key>',
+  CONFIG_SET_VALUE_EMPTY: 'Config value is empty — nothing to set',
+  CONFIG_SET_NO_SERVICE:
+    'Config sets need a service context: app "{{app}}" / service "{{service}}" not found in SI SaaS',
+  CONFIG_SET_NOT_FOUND: 'Config set "{{name}}" not found',
+  CONFIG_SET_MERGED: 'Config item "{{ref}}" merged into the latest version of "{{name}}"',
+  CONFIG_SET_CREATED: 'Config set "{{name}}" created (scope: {{scope}}) with the item',
+  CONFIG_LIST_NO_APP:
+    'App "{{app}}" does not exist in SI SaaS yet — deploy once or create it in the Console first',
+  CONFIG_LIST_EMPTY: 'No config sets found for this app',
+  CONFIG_LIST_ROW: '{{name}}  [{{scope}}]  stage={{stage}}  updated={{updated}}',
+  CONFIG_VERSIONS_ROW: 'v{{version}}  tags=[{{tags}}]  items={{items}}',
+  CONFIG_RELEASE_ALREADY_LATEST:
+    'Set "{{name}}" is already released at v{{version}} — pass --version to roll back',
+  CONFIG_RELEASED: 'Set "{{name}}" released: latest now points to v{{version}}',
+  CONFIG_TAGGED: 'Set "{{name}}": tag "{{tag}}" attached to v{{version}}',
+  CONFIG_KEY_DELETED: 'Config item "{{ref}}" removed from the latest version',
+  CONFIG_RESOLVE_REQUIRES_SAAS:
+    'This yaml uses ${config_sets.*} references — deploy-time resolution requires the SI SaaS state backend (type: SAAS) and credentials',
+  CONFIG_RESOLVING_REFS: 'Resolving {{count}} config-set reference(s) from SI SaaS…',
+  CONFIG_REFS_RESOLVED: 'Resolved {{count}} config-set reference(s)',
+  CONFIG_ITEM_NOT_FOUND:
+    'Config references failed to resolve:\n  {{refs}}\nSearched scopes: {{scopes}}. Check the names in the Console or the API key scope binding.',
+  CONFIG_REF_APPLIED: 'Config ref applied at {{field}}: {{ref}}@v{{version}}',
+  CONFIG_RUNTIME_KEY_ISSUED: 'Runtime config key issued (rotated={{rotated}})',
+  CONFIG_RUNTIME_TOKEN_INJECTED:
+    'SI_CONFIG_TOKEN / SI_CONSOLE_URL injected into function environments',
+  CONFIG_RUNTIME_KEY_NOT_READY:
+    'Runtime key issuance needs the deployment identity — run deploy against the SaaS backend',
+  CONFIG_LOCAL_RESOLVE_FAILED:
+    'Config refs not resolved for local run: {{reason}} — the snapshot file was not written',
+  CONFIG_LOCAL_SNAPSHOT_WRITTEN: 'Local config snapshot written to {{file}} ({{count}} entries)',
   OPT_AUTO_APPROVE: 'skip interactive approval of plan before deploying',
   OPT_PARAMETER: 'override parameters',
   OPT_DEBUG: 'enable debug mode',

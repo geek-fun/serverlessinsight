@@ -1,4 +1,11 @@
-import { isSensitiveEnvEntry, readEnvironment, redactEnvironmentAttributes } from './envRedaction';
+import {
+  isConfigRefMarker,
+  isSensitiveEnvEntry,
+  markerProvenance,
+  readEnvironment,
+  redactEnvironmentAttributes,
+  sessionMarkerFor,
+} from './envRedaction';
 import { lang } from '../lang';
 import type { AttributeDiff, PlanItem } from '../types';
 
@@ -9,12 +16,27 @@ const SENSITIVE_FIELDS = new Set([
   'certificatePrivateKey',
 ]);
 
+const sensitiveDisplay = (value: unknown, previous?: unknown): string => {
+  const marker =
+    sessionMarkerFor(value) ??
+    (typeof value === 'string' && isConfigRefMarker(value) ? value : null);
+  if (marker) {
+    const previousMarker =
+      typeof previous === 'string'
+        ? (sessionMarkerFor(previous) ?? (isConfigRefMarker(previous) ? previous : null))
+        : null;
+    const provenance = markerProvenance(marker, previousMarker ?? undefined);
+    if (provenance) return provenance;
+  }
+  return lang.__('PLAN_SENSITIVE_VALUE');
+};
+
 const maskDiffValues = (diff: AttributeDiff): AttributeDiff => {
   const { children: _children, before, after, ...rest } = diff;
   return {
     ...rest,
-    ...(before !== undefined ? { before: lang.__('PLAN_SENSITIVE_VALUE') } : {}),
-    ...(after !== undefined ? { after: lang.__('PLAN_SENSITIVE_VALUE') } : {}),
+    ...(before !== undefined ? { before: sensitiveDisplay(before) } : {}),
+    ...(after !== undefined ? { after: sensitiveDisplay(after, before) } : {}),
   };
 };
 

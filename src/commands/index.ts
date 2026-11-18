@@ -13,6 +13,14 @@ import { validate } from './validate';
 import { deploy } from './deploy';
 import { destroyStack } from './destroy';
 import { runLocal } from './local';
+import {
+  configList,
+  configSet,
+  configVersions,
+  configRelease,
+  configTag,
+  configDelete,
+} from './config';
 import { runDiffCommand } from './plan';
 import { forceUnlockCommand } from './forceUnlock';
 import { show } from './show';
@@ -415,6 +423,178 @@ program
           accessKeyId,
           accessKeySecret,
           securityToken,
+          org,
+          line,
+        });
+      },
+    ),
+  );
+
+// ── si config (epic #53 P1) ──
+const configCmd = program.command('config').description(lang.__('CMD_CONFIG_DESC'));
+
+configCmd
+  .command('list')
+  .description(lang.__('CMD_CONFIG_LIST_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'), 'default')
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --si-api-key <siApiKey>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <org>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
+  .action(
+    actionWrapper('config list', async ({ file, stage, region, provider, siApiKey, org, line }) => {
+      await configList({
+        location: file,
+        stage,
+        region,
+        provider,
+        siApiKey,
+        org,
+        line,
+      });
+    }),
+  );
+
+configCmd
+  .command('set <name.key>')
+  .description(lang.__('CMD_CONFIG_SET_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-t, --type <type>', lang.__('OPT_CONFIG_TYPE'), 'string')
+  .option('--stdin', lang.__('OPT_CONFIG_STDIN'), false)
+  .option('-k, --si-api-key <siApiKey>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <org>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
+  .action(
+    actionWrapper(
+      'config set',
+      async (ref, { file, stage, region, provider, type, stdin, siApiKey, org, line }) => {
+        await configSet(ref, {
+          location: file,
+          stage,
+          region,
+          provider,
+          type,
+          stdin: !!stdin,
+          siApiKey,
+          org,
+          line,
+        });
+      },
+    ),
+  );
+
+configCmd
+  .command('versions <name>')
+  .description(lang.__('CMD_CONFIG_VERSIONS_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'), 'default')
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --si-api-key <siApiKey>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <org>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
+  .action(
+    actionWrapper(
+      'config versions',
+      async (name, { file, stage, region, provider, siApiKey, org, line }) => {
+        await configVersions(name, {
+          location: file,
+          stage,
+          region,
+          provider,
+          siApiKey,
+          org,
+          line,
+        });
+      },
+    ),
+  );
+
+configCmd
+  .command('release <name>')
+  .description(lang.__('CMD_CONFIG_RELEASE_DESC'))
+  .option('--version <version>', lang.__('OPT_CONFIG_VERSION'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'), 'default')
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --si-api-key <siApiKey>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <org>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
+  .action(
+    actionWrapper(
+      'config release',
+      async (name, { version, file, stage, region, provider, siApiKey, org, line }) => {
+        await configRelease(name, {
+          location: file,
+          stage,
+          region,
+          provider,
+          version: version ? Number(version) : undefined,
+          siApiKey,
+          org,
+          line,
+        });
+      },
+    ),
+  );
+
+configCmd
+  .command('tag <name>')
+  .description(lang.__('CMD_CONFIG_TAG_DESC'))
+  .requiredOption('--version <version>', lang.__('OPT_CONFIG_VERSION'))
+  .requiredOption('--tag <tag>', lang.__('OPT_CONFIG_TAG'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'), 'default')
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --si-api-key <siApiKey>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <org>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
+  .action(
+    actionWrapper(
+      'config tag',
+      async (name, { version, tag, file, stage, region, provider, siApiKey, org, line }) => {
+        await configTag(name, {
+          location: file,
+          stage,
+          region,
+          provider,
+          version: Number(version),
+          tag,
+          siApiKey,
+          org,
+          line,
+        });
+      },
+    ),
+  );
+
+configCmd
+  .command('delete <name.key>')
+  .description(lang.__('CMD_CONFIG_DELETE_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'), 'default')
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --si-api-key <siApiKey>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <org>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
+  .action(
+    actionWrapper(
+      'config delete',
+      async (ref, { file, stage, region, provider, siApiKey, org, line }) => {
+        await configDelete(ref, {
+          location: file,
+          stage,
+          region,
+          provider,
+          siApiKey,
           org,
           line,
         });
