@@ -731,14 +731,21 @@ export const createSaasStateBackend = async (
       await eventQueue?.flushOnExit();
     },
     issueRuntimeConfigToken: async (): Promise<{ token: string; consoleUrl: string }> => {
+      // The runtime key binds to the deployment's service+stage, so the
+      // identity must exist first. On a first deploy the executor has not
+      // provisioned yet — resolve read-only, falling back to provisioning the
+      // same deployment identity the executor would create (issue #53 P2).
       if (!resolvedServiceId) {
-        throw new Error(lang.__('CONFIG_RUNTIME_KEY_NOT_READY'));
+        const exists = await resolveReadOnlyIdentity();
+        if (!exists) {
+          await provision(normalized.provider, normalized.stage);
+        }
       }
       // The key binding rides on the deploy key's own scope (org + service +
       // stage); the SaaS rejects stage mismatches (issue #53 P2).
       const response = await client.post<{ fullKey: string; rotated: boolean }>(
         '/api/v1/runtime-keys',
-        { stage: normalized.stage },
+        { stage: normalized.stage, serviceId: resolvedServiceId },
       );
       return { token: response.fullKey, consoleUrl };
     },
