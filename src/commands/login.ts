@@ -121,9 +121,6 @@ const healStoredProfile = async (
   stored: StoredProfile,
   flagLine?: ConsoleLineName | null,
 ): Promise<boolean> => {
-  for (const anomaly of storedAnomalies(stored)) {
-    logger.warn(anomaly);
-  }
   const line = storedLineForHeal(stored, flagLine);
   if (!line) {
     logger.error(lang.__('LOGIN_HEAL_LINE_UNRESOLVED'));
@@ -470,13 +467,15 @@ export const login = async (options: {
   // stored profile (re-key + identity refresh) instead of nagging about it.
   // Unhealable states (dead key, unreachable console, undeterminable line)
   // keep the profile and fall through to a fresh sign-in below.
-  if (stored && storedAnomalies(stored).length > 0) {
+  const anomalies = stored ? storedAnomalies(stored) : [];
+  if (stored && anomalies.length > 0) {
+    anomalies.forEach((anomaly) => logger.warn(anomaly));
     const healed = await healStoredProfile(stored, flagLine);
     if (healed) return;
   }
 
   // Check if already logged in — only a healthy stored profile asks.
-  if (stored && storedAnomalies(stored).length === 0 && process.stdin.isTTY === true) {
+  if (stored && anomalies.length === 0 && process.stdin.isTTY === true) {
     const answer = await ask(
       lang.__('LOGIN_ALREADY_LOGGED_IN', {
         userEmail: stored.profile.userEmail || '',

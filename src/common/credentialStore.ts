@@ -174,7 +174,8 @@ export const saveProfile = (
   writeFile({ active, profiles });
 };
 
-export type ProfilePatch = {
+/** Validate-response patch applied by updateProfile; module-private shape. */
+type ProfilePatch = {
   readonly orgSlug: string;
   readonly orgId?: string;
   readonly orgName?: string;
