@@ -733,6 +733,22 @@ describe('login command (ADR-008)', () => {
       );
       expect(mockSaveProfile).not.toHaveBeenCalled();
     });
+
+    it('falls back to the slug and id when the stored profile carries no org name', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'china/example-org',
+        profiles: {
+          'china/example-org': { apiKey: chinaKey, orgId: 'org-1', orgSlug: 'example-org' },
+        },
+      });
+
+      await login({ siApiKey: intlKey, line: 'international', org: 'other-org' });
+
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_ORG_MISMATCH_ACTIVE',
+        expect.objectContaining({ profileKey: 'china/example-org', orgName: 'example-org' }),
+      );
+    });
   });
 
   describe('explicit key edge cases (issue #309 coverage)', () => {
@@ -959,6 +975,223 @@ describe('login command (ADR-008)', () => {
       await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
 
       expect(logger.error).toHaveBeenCalledWith('LOGIN_HEAL_SKIPPED');
+    });
+
+    it('heals a segment-keyed profile from a minimal validate payload', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'china/legacy-0701c503',
+        profiles: {
+          'china/legacy-0701c503': { apiKey: chinaKey, orgId: 'org-1', userEmail: 'user@test.com' },
+        },
+      });
+      // No org id/name/email beyond the slug — the heal must tolerate it.
+      mockValidateApiKey.mockResolvedValueOnce({ orgSlug: 'test-org', region: 'cn' });
+      healedTo('china/test-org');
+
+      await login({});
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        chinaKey,
+        'https://console.serverlessinsight.cn',
+      );
+      expect(mockUpdateProfile).toHaveBeenCalledWith('china/legacy-0701c503', chinaKey, {
+        orgSlug: 'test-org',
+      });
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_HEALED',
+        expect.objectContaining({ profileKey: 'china/test-org', userEmail: 'user@test.com' }),
+      );
+    });
+
+    it('falls back to the org id and the unknown placeholder when validate carries no slug', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      mockValidateApiKey.mockResolvedValueOnce({ orgId: 'org-42', region: 'com' });
+      healedTo('international/org-42');
+
+      await login({});
+
+      expect(mockUpdateProfile).toHaveBeenCalledWith(
+        placeholderKey,
+        legacyKey,
+        expect.objectContaining({ orgSlug: 'org-42' }),
+      );
+    });
+
+    it('keeps a legacy profile whose key already matches its slug key in place', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'international/test-org',
+        profiles: {
+          'international/test-org': {
+            apiKey: intlKey,
+            orgId: 'org-1',
+            orgSlug: 'test-org',
+            orgName: 'Test Org',
+          },
+        },
+      });
+      mockReadLegacyConsoleUrl.mockReturnValue('https://console.serverlessinsight.com');
+      healedTo('international/test-org');
+
+      await login({});
+
+      expect(mockUpdateProfile).toHaveBeenCalledWith(
+        'international/test-org',
+        intlKey,
+        expect.objectContaining({ orgSlug: 'test-org' }),
+      );
+      expect(logger.debug).not.toHaveBeenCalledWith(
+        'LOGIN_HEAL_DEBUG',
+        expect.objectContaining({ from: 'international/test-org', to: 'international/test-org' }),
+      );
+    });
+
+    it('treats a 5xx validate response as unreachable and logs non-Error failures verbatim', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      const { ApiError } = jest.requireMock('../../../src/common/apiClient');
+      mockValidateApiKey.mockRejectedValueOnce(new ApiError('boom', 500));
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_HEAL_UNREACHABLE');
+      expect(logger.debug).toHaveBeenCalledWith('boom');
+    });
+
+    it('treats a 403 heal rejection like any rejected key', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      const { ApiError } = jest.requireMock('../../../src/common/apiClient');
+      mockValidateApiKey.mockRejectedValueOnce(new ApiError('forbidden', 403));
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_HEAL_KEY_INVALID');
+    });
+
+    it('accepts a spelled-out yes and reports 403 as an invalid key on the key path', async () => {
+      setTty(true);
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'china/example-org',
+        profiles: {
+          'china/example-org': {
+            apiKey: chinaKey,
+            orgId: 'org-1',
+            orgSlug: 'example-org',
+            orgName: 'Example Org',
+          },
+        },
+      });
+      mockReadlineAnswers.push('yes');
+      mockReadlineAnswers.push('2'); // line picker -> china
+      mockReadlineAnswers.push('2'); // method chooser -> API key
+      mockReadlineAnswers.push(chinaKey);
+
+      await login({});
+
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'china',
+        expect.objectContaining({ apiKey: chinaKey }),
+        { activate: true },
+      );
+    });
+
+    it('reports a 403 validate failure as an invalid key (key path)', async () => {
+      const { ApiError } = jest.requireMock('../../../src/common/apiClient');
+      mockValidateApiKey.mockRejectedValueOnce(new ApiError('forbidden', 403));
+
+      await login({ siApiKey: chinaKey });
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_KEY_INVALID');
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+
+    it('uses the unknown placeholder when validate carries no identity at all', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: placeholderKey,
+        profiles: { [placeholderKey]: { apiKey: legacyKey, orgId: 'org-1' } },
+      });
+      // No slug, no org id, no email anywhere — the heal still re-keys and
+      // reports with the defensive placeholders.
+      mockValidateApiKey.mockResolvedValueOnce({ region: 'com' });
+      healedTo('international/unknown');
+
+      await login({});
+
+      expect(mockUpdateProfile).toHaveBeenCalledWith(
+        placeholderKey,
+        legacyKey,
+        expect.objectContaining({ orgSlug: 'unknown' }),
+      );
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_HEALED',
+        expect.objectContaining({ profileKey: 'international/unknown', userEmail: '(unknown)' }),
+      );
+    });
+
+    it('logs a non-Error validate failure verbatim', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      mockValidateApiKey.mockRejectedValueOnce('plain string failure');
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(logger.debug).toHaveBeenCalledWith('plain string failure');
+    });
+
+    it('falls back to the org id in the mismatch report when no name or slug is stored', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'china/legacy-0701c503',
+        profiles: { 'china/legacy-0701c503': { apiKey: chinaKey, orgId: 'org-1' } },
+      });
+
+      await login({ siApiKey: intlKey, line: 'international', org: 'other-org' });
+
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_ORG_MISMATCH_ACTIVE',
+        expect.objectContaining({ profileKey: 'china/legacy-0701c503', orgName: 'org-1' }),
+      );
+    });
+
+    it('refuses the line when the stored profile key is not a composite key', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'badprefix/foo',
+        profiles: { 'badprefix/foo': { apiKey: legacyKey, orgId: 'org-1' } },
+      });
+      mockReadLegacyConsoleUrl.mockReturnValue(null);
+
+      await login({ siApiKey: legacyKey });
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_NEED_LINE');
+      expect(mockValidateApiKey).not.toHaveBeenCalled();
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+
+    it('reports the unresolvable line for a profile whose stored key prefix is invalid', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'badprefix/foo',
+        profiles: { 'badprefix/foo': { apiKey: legacyKey, orgId: 'org-1' } },
+      });
+      mockReadLegacyConsoleUrl.mockReturnValue(null);
+
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_HEAL_LINE_UNRESOLVED');
+    });
+
+    it('accepts a plain no for a healthy profile without a stored email', async () => {
+      setTty(true);
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'china/example-org',
+        profiles: {
+          'china/example-org': { apiKey: chinaKey, orgId: 'org-1', orgSlug: 'example-org' },
+        },
+      });
+      mockReadlineAnswers.push('n');
+
+      await login({});
+
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_ALREADY_LOGGED_IN',
+        expect.objectContaining({ userEmail: '' }),
+      );
+      expect(mockSaveProfile).not.toHaveBeenCalled();
     });
   });
 });
