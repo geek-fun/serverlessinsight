@@ -73,13 +73,19 @@ const transformYaml = (iacJson: ServerlessIacRaw, stage?: string): ServerlessIac
   };
 };
 
-export const parseYaml = (iacLocation: string): ServerlessIac => {
+export const parseYaml = (iacLocation: string, options?: { validate?: boolean }): ServerlessIac => {
   validateExistence(iacLocation);
 
   const yamlContent = readFileSync(iacLocation, 'utf8');
   const iacJson = parse(yamlContent) as ServerlessIacRaw;
 
-  validateYaml(iacJson);
+  // validate defaults to true; callers that only need the declaration skeleton
+  // (migrate: app/service/provider/stages, resources come from the state
+  // store) can skip it — stage-variable references cannot resolve without a
+  // stage context and would fail schema validation with empty strings.
+  if (options?.validate !== false) {
+    validateYaml(iacJson);
+  }
 
   return transformYaml(iacJson);
 };
