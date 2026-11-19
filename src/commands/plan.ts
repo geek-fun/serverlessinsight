@@ -18,6 +18,7 @@ export const plan = async (options: {
   accessKeyId?: string;
   accessKeySecret?: string;
   securityToken?: string;
+  siApiKey?: string;
   refresh?: boolean;
   json?: boolean;
   noColor?: boolean;
@@ -57,6 +58,7 @@ export const plan = async (options: {
   const backend = await createStateBackend(iac.backend, {
     ...context,
     declaredOrg: iac.org,
+    siApiKey: options.siApiKey,
     org: options.org,
     line: options.line,
     migrationMarker: 'warn',
@@ -108,6 +110,7 @@ export type DiffCommandOptions = {
   accessKeyId?: string;
   accessKeySecret?: string;
   securityToken?: string;
+  siApiKey?: string;
   refresh?: boolean;
   json?: boolean;
   color?: boolean;
@@ -128,6 +131,7 @@ export const runDiffCommand = async (options: DiffCommandOptions): Promise<void>
     accessKeyId: options.accessKeyId,
     accessKeySecret: options.accessKeySecret,
     securityToken: options.securityToken,
+    siApiKey: options.siApiKey,
     refresh: options.refresh,
     json: !!options.json,
     noColor: options.color === false,

@@ -11,7 +11,7 @@ import { lang } from '../lang';
 
 let context: Context | undefined;
 
-const DEFAULT_IAC_FILES = [
+export const DEFAULT_IAC_FILES = [
   'serverlessinsight.yml',
   'serverlessInsight.yml',
   'ServerlessInsight.yml',
