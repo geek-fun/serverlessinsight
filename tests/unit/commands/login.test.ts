@@ -996,6 +996,7 @@ describe('login command (ADR-008)', () => {
       );
       expect(mockUpdateProfile).toHaveBeenCalledWith('china/legacy-0701c503', chinaKey, {
         orgSlug: 'test-org',
+        line: 'china',
       });
       expect(langMock).toHaveBeenCalledWith(
         'LOGIN_HEALED',
@@ -1003,18 +1004,19 @@ describe('login command (ADR-008)', () => {
       );
     });
 
-    it('falls back to the org id and the unknown placeholder when validate carries no slug', async () => {
+    it('keeps the profile unverified when validate carries no slug', async () => {
       mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
       mockValidateApiKey.mockResolvedValueOnce({ orgId: 'org-42', region: 'com' });
-      healedTo('international/org-42');
+      mockUpdateProfile.mockImplementation(() => placeholderKey);
 
       await login({});
 
-      expect(mockUpdateProfile).toHaveBeenCalledWith(
-        placeholderKey,
-        legacyKey,
-        expect.objectContaining({ orgSlug: 'org-42' }),
-      );
+      // No fabricated slug: the profile is refreshed in place and stays unverified,
+      // so the console can assign the real slug later without a local mismatch.
+      expect(mockUpdateProfile).toHaveBeenCalledWith(placeholderKey, legacyKey, {
+        line: 'international',
+        orgId: 'org-42',
+      });
     });
 
     it('keeps a legacy profile whose key already matches its slug key in place', async () => {
@@ -1103,27 +1105,79 @@ describe('login command (ADR-008)', () => {
       expect(mockSaveProfile).not.toHaveBeenCalled();
     });
 
-    it('uses the unknown placeholder when validate carries no identity at all', async () => {
+    it('refreshes in place when validate carries no identity at all', async () => {
       mockLoadCredentialsFile.mockReturnValue({
         active: placeholderKey,
         profiles: { [placeholderKey]: { apiKey: legacyKey, orgId: 'org-1' } },
       });
-      // No slug, no org id, no email anywhere — the heal still re-keys and
-      // reports with the defensive placeholders.
       mockValidateApiKey.mockResolvedValueOnce({ region: 'com' });
-      healedTo('international/unknown');
+      mockUpdateProfile.mockImplementation(() => placeholderKey);
 
       await login({});
 
-      expect(mockUpdateProfile).toHaveBeenCalledWith(
-        placeholderKey,
-        legacyKey,
-        expect.objectContaining({ orgSlug: 'unknown' }),
-      );
+      expect(mockUpdateProfile).toHaveBeenCalledWith(placeholderKey, legacyKey, {
+        line: 'international',
+      });
       expect(langMock).toHaveBeenCalledWith(
         'LOGIN_HEALED',
-        expect.objectContaining({ profileKey: 'international/unknown', userEmail: '(unknown)' }),
+        expect.objectContaining({ profileKey: placeholderKey, userEmail: '(unknown)' }),
       );
+    });
+
+    it('enforces the --org assertion during heal and stores nothing on mismatch', async () => {
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder());
+      // Stored key belongs to test-org; the user asserted other-team.
+      mockValidateApiKey.mockResolvedValueOnce({ ...identity(), region: 'com' });
+
+      await expect(login({ org: 'other-team' })).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_ORG_MISMATCH',
+        expect.objectContaining({ actual: 'test-org', expected: 'other-team' }),
+      );
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
+
+    it('re-keys to the line validation actually used, not the stored prefix', async () => {
+      // Legacy file with a fabricated international prefix; --line pins china.
+      mockLoadCredentialsFile.mockReturnValue(storedPlaceholder('international/legacy-0701c503'));
+      mockReadLegacyConsoleUrl.mockReturnValue('http://localhost:3002');
+      mockValidateApiKey.mockResolvedValueOnce({ ...identity(), region: 'cn' });
+      healedTo('china/test-org');
+
+      await login({ line: 'china' });
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        legacyKey,
+        'https://console.serverlessinsight.cn',
+      );
+      expect(mockUpdateProfile).toHaveBeenCalledWith('international/legacy-0701c503', legacyKey, {
+        orgSlug: 'test-org',
+        line: 'china',
+        orgId: 'org-1',
+        orgName: 'Test Org',
+        userEmail: 'user@test.com',
+      });
+    });
+
+    it('refuses to heal when the key segment contradicts --line', async () => {
+      // Heal refusal falls through to a fresh sign-in; keep that branch's
+      // internal timeout short so the test does not wait on it.
+      process.env.SI_LOGIN_TIMEOUT_MS = '50';
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'international/legacy-0701c503',
+        profiles: {
+          'international/legacy-0701c503': { ...placeholderProfile, apiKey: chinaKey },
+        },
+      });
+
+      await login({ line: 'international' });
+
+      expect(langMock).toHaveBeenCalledWith(
+        'LOGIN_LINE_MISMATCH',
+        expect.objectContaining({ keyLine: 'china', line: 'international' }),
+      );
+      expect(mockValidateApiKey).not.toHaveBeenCalled();
     });
 
     it('logs a non-Error validate failure verbatim', async () => {

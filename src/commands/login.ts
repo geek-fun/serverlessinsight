@@ -101,11 +101,17 @@ const storedLineForHeal = (
   return splitProfileKey(stored.profileKey)?.line ?? null;
 };
 
-/** Re-key the stored profile to line/orgSlug after validate; false keeps it untouched. */
+/** Heal the stored profile after validate; false keeps it untouched. */
 const healStoredProfile = async (
   stored: StoredProfile,
   flagLine?: ConsoleLineName | null,
+  orgFlag?: string,
 ): Promise<boolean> => {
+  const keyLine = parseApiKeyLine(stored.profile.apiKey);
+  if (keyLine && flagLine && keyLine !== flagLine) {
+    logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine, line: flagLine }));
+    return false;
+  }
   const line = storedLineForHeal(stored, flagLine);
   if (!line) {
     logger.error(lang.__('LOGIN_HEAL_LINE_UNRESOLVED'));
@@ -124,9 +130,16 @@ const healStoredProfile = async (
       logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine: result.region, line }));
       return false;
     }
-    const slug = result.orgSlug || result.orgId || 'unknown';
+    // Same assertion semantics as finalizeLogin: --org must match the key's org.
+    if (orgFlag && result.orgSlug && result.orgSlug !== orgFlag) {
+      logger.error(lang.__('LOGIN_ORG_MISMATCH', { actual: result.orgSlug, expected: orgFlag }));
+      return false;
+    }
+    // A slugless validate must not fabricate orgSlug from the org id — a made-up
+    // value would shadow the real slug the console may assign later (issue #309).
     const healed = updateProfile(stored.profileKey, stored.profile.apiKey, {
-      orgSlug: slug,
+      ...(result.orgSlug ? { orgSlug: result.orgSlug } : {}),
+      line,
       ...(result.orgId ? { orgId: result.orgId } : {}),
       ...(result.orgName ? { orgName: result.orgName } : {}),
       ...(result.userEmail ? { userEmail: result.userEmail } : {}),
@@ -448,7 +461,7 @@ export const login = async (options: {
   const anomalies = stored ? storedAnomalies(stored) : [];
   if (stored && anomalies.length > 0) {
     anomalies.forEach((anomaly) => logger.warn(anomaly));
-    const healed = await healStoredProfile(stored, flagLine);
+    const healed = await healStoredProfile(stored, flagLine, options.org);
     if (healed) return;
   }
 
