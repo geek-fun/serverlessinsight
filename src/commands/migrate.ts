@@ -100,7 +100,10 @@ export const migrate = async (options: {
 }) => {
   logger.info(lang.__('VALIDATING_YAML'));
   const iacLocation = getIacLocation(options.location);
-  const rawIac = parseYaml(iacLocation);
+  // Skeleton read only — app/service/provider/stages; the resources migrate
+  // carries over live in the source state, and full validation needs a stage
+  // context the skeleton does not have (it runs again via revalYaml below).
+  const rawIac = parseYaml(iacLocation, { validate: false });
   logger.info(lang.__('YAML_VALID'));
 
   await setContext(

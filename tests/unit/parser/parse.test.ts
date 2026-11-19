@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { parseYaml, revalYaml } from '../../../src/parser';
 import { Context } from '../../../src/types';
@@ -338,5 +339,25 @@ describe('unit test for parse', () => {
         expect(isFilePath('cas-abc123')).toBe(false);
       });
     });
+  });
+});
+
+describe('parseYaml validate flag', () => {
+  const iacLocation = path.resolve(__dirname, '../../fixtures/serverless-insight.yml');
+
+  it('skips schema validation when validate:false, still returning the transformed skeleton', () => {
+    const original = fs.readFileSync(iacLocation, 'utf8');
+    // Schema validation runs AFTER stage-variable evaluation, so an
+    // unresolvable reference arrives as an empty string and fails validation.
+    const broken = original.replace('timeout: 10', 'timeout: invalid-timeout');
+    expect(() => parseYaml(iacLocation)).not.toThrow();
+    fs.writeFileSync(iacLocation, broken);
+    try {
+      expect(() => parseYaml(iacLocation)).toThrow();
+      const skeleton = parseYaml(iacLocation, { validate: false });
+      expect(skeleton).toMatchObject({ app: 'insight-poc-app', service: 'insight-poc' });
+    } finally {
+      fs.writeFileSync(iacLocation, original);
+    }
   });
 });
