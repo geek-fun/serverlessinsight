@@ -3,7 +3,6 @@ import type { PlanItem, AttributeDiff, PlanDisplayConfig } from '../types';
 import { diffAttributes } from './hashUtils';
 import { canonicalValue } from './planCompare';
 import { lang } from '../lang';
-import { logger } from './logger';
 import { isNoColorEnabled } from './noColor';
 
 const COLOR = {
@@ -446,5 +445,6 @@ export const displayPlan = (
     colorize: !isNoColorEnabled(),
     ...config,
   });
-  logger.info(output);
+  // Issue #315: a plan preview is a report block — raw print, no log prefixes.
+  console.log(output);
 };

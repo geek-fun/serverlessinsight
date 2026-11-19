@@ -1,0 +1,50 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`report output format (issue #315) empty plan preview prints as one block 1`] = `"No changes. Infrastructure is up to date."`;
+
+exports[`report output format (issue #315) login line picker prints as one block 1`] = `
+"
+  Select a ServerlessInsight region:
+
+  1. international  (https://console.serverlessinsight.com)
+  2. china  (https://console.serverlessinsight.cn)
+"
+`;
+
+exports[`report output format (issue #315) login method chooser prints as one block 1`] = `
+"
+  How would you like to authenticate?
+
+    1. Login via Web Console (opens browser)
+    2. Input API Key (paste an existing key)
+"
+`;
+
+exports[`report output format (issue #315) plan preview prints as one block 1`] = `
+"ServerlessInsight will perform the following actions:
+
+  # functions.hello will be created
+  + functions.hello:
+    + memory:      512
+    + name:        "hello-fn"
+    + timeout:     10
+
+Plan: 1 add, 0 modify, 0 remove, 0 recreate, 1 unchanged."
+`;
+
+exports[`report output format (issue #315) state-command profile prompt prints as one block 1`] = `
+"Multiple ServerlessInsight profiles stored — choose one for deploy:
+  1. china/example-org
+  2. international/acme"
+`;
+
+exports[`report output format (issue #315) whoami prints the not-logged-in report as one block 1`] = `"Not logged in. Run \`si login\` to authenticate."`;
+
+exports[`report output format (issue #315) whoami prints the profile report as one block 1`] = `
+"
+  Stored profiles (2):
+    china/example-org  Org: Example Org  Key: si_cn_abcdef...
+  * international/acme  Org: Acme Corp  Key: si_com_abcde... (active)
+  Console: https://console.serverlessinsight.com
+"
+`;

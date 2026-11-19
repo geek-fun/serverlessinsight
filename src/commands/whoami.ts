@@ -1,37 +1,45 @@
-import { logger } from '../common';
-import { loadCredentialsFile } from '../common/credentialStore';
+import { CredentialsFile, loadCredentialsFile } from '../common/credentialStore';
 import { ConsoleLineName, consoleOriginFor, splitProfileKey } from '../common/consoleLines';
 import { lang } from '../lang';
 
-export const whoami = async (): Promise<void> => {
-  const file = loadCredentialsFile();
+/** Issue #315: the report is one user-facing block, not a log stream. */
+export const whoamiReport = (file: CredentialsFile | null): string => {
   const profileKeys = Object.keys(file?.profiles ?? {});
   if (!file || profileKeys.length === 0) {
-    logger.info(lang.__('WHOAMI_NOT_LOGGED_IN'));
-    return;
+    return lang.__('WHOAMI_NOT_LOGGED_IN');
   }
 
-  logger.info('');
-  logger.info(`  ${lang.__('WHOAMI_PROFILES_HEADER', { count: String(profileKeys.length) })}`);
-  let activeLine: ConsoleLineName | undefined;
-  for (const key of profileKeys) {
-    const profile = file.profiles[key]!;
-    const isActive = key === file.active;
-    const split = splitProfileKey(key);
-    if (isActive && split) activeLine = split.line;
-    logger.info(
-      '  ' +
+  const entries = profileKeys.map((key) => ({
+    key,
+    profile: file.profiles[key]!,
+    isActive: key === file.active,
+  }));
+  const activeEntry = entries.find((entry) => entry.isActive);
+  const activeLine: ConsoleLineName | undefined = activeEntry
+    ? splitProfileKey(activeEntry.key)?.line
+    : undefined;
+
+  return [
+    '',
+    `  ${lang.__('WHOAMI_PROFILES_HEADER', { count: String(profileKeys.length) })}`,
+    ...entries.map(
+      (entry) =>
+        '  ' +
         lang.__('WHOAMI_PROFILE', {
-          marker: isActive ? lang.__('WHOAMI_ACTIVE_MARK') : '  ',
-          profileKey: key,
-          orgName: profile.orgName || profile.orgId,
-          keyPrefix: profile.apiKey.slice(0, 12),
+          marker: entry.isActive ? lang.__('WHOAMI_ACTIVE_MARK') : '  ',
+          profileKey: entry.key,
+          orgName: entry.profile.orgName || entry.profile.orgId,
+          keyPrefix: entry.profile.apiKey.slice(0, 12),
         }) +
-        (isActive ? lang.__('WHOAMI_ACTIVE_SUFFIX') : ''),
-    );
-  }
-  if (activeLine) {
-    logger.info(`  ${lang.__('WHOAMI_CONSOLE', { url: consoleOriginFor(activeLine) })}`);
-  }
-  logger.info('');
+        (entry.isActive ? lang.__('WHOAMI_ACTIVE_SUFFIX') : ''),
+    ),
+    ...(activeLine
+      ? [`  ${lang.__('WHOAMI_CONSOLE', { url: consoleOriginFor(activeLine) })}`]
+      : []),
+    '',
+  ].join('\n');
+};
+
+export const whoami = async (): Promise<void> => {
+  console.log(whoamiReport(loadCredentialsFile()));
 };
