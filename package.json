@@ -67,7 +67,7 @@
     "@alicloud/nas20170626": "^3.7.0",
     "@alicloud/openapi-client": "^0.4.15",
     "@alicloud/ram20150501": "^1.3.0",
-    "@alicloud/rds20140815": "^15.9.0",
+    "@alicloud/rds20140815": "^16.2.0",
     "@alicloud/sls20201230": "^5.11.0",
     "@volcengine/openapi": "^1.36.2",
     "@volcengine/tos-sdk": "^2.9.1",
@@ -117,7 +117,6 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "fast-xml-parser": ">=5.3.8",
     "protobufjs": "^7.6.1"
   }
 }
