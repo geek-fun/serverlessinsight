@@ -223,11 +223,13 @@ describe('Volcengine standalone planning (issue #266)', () => {
     it('names Volcengine and renders changes in human output without ANSI colors', async () => {
       const result = await runCli('diff', ['--no-refresh', '--no-color', '-p', 'acl=PUBLIC_READ']);
       expect(result.code).toBe(2);
+      // Issue #315: progress stays in the pino log stream (stderr); the plan
+      // preview is a report block printed raw to stdout.
       expect(result.stderr).toContain('Generating plan for Volcengine resources');
-      expect(result.stderr).toContain('buckets.assets');
-      expect(result.stderr).toContain('public-read');
+      expect(result.stdout).toContain('buckets.assets');
+      expect(result.stdout).toContain('public-read');
+      expect(result.stdout).not.toContain('\u001b[');
       expect(result.stderr).not.toContain('\u001b[');
-      expect(result.stdout).toBe('');
     });
 
     it('exits 1 with a JSON error when the planner cannot load state', async () => {

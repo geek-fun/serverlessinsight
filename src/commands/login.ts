@@ -36,19 +36,35 @@ const ask = (query: string): Promise<string> => {
   });
 };
 
-/** ADR-008: pick the line by NAME; the origin shown is informational only. */
-const promptLinePicker = async (): Promise<ConsoleLineName> => {
-  console.log(`\n  ${lang.__('LOGIN_PICK_LINE')}\n`);
-  LINE_NAMES.forEach((name, index) => {
-    console.log(
+/** Issue #315: menus are report blocks — one assembled string, one print. */
+export const linePickerMenu = (): string =>
+  [
+    '',
+    `  ${lang.__('LOGIN_PICK_LINE')}`,
+    '',
+    ...LINE_NAMES.map((name, index) =>
       lang.__('LOGIN_LINE_OPTION', {
         index: String(index + 1),
         name,
         origin: CONSOLE_LINES[name].origin,
       }),
-    );
-  });
-  console.log('');
+    ),
+    '',
+  ].join('\n');
+
+export const methodChooserMenu = (): string =>
+  [
+    '',
+    `  ${lang.__('LOGIN_CHOOSE_METHOD')}`,
+    '',
+    `    1. ${lang.__('LOGIN_OPTION_BROWSER')}`,
+    `    2. ${lang.__('LOGIN_OPTION_API_KEY')}`,
+    '',
+  ].join('\n');
+
+/** ADR-008: pick the line by NAME; the origin shown is informational only. */
+const promptLinePicker = async (): Promise<ConsoleLineName> => {
+  console.log(linePickerMenu());
   for (;;) {
     const answer = await ask(lang.__('LOGIN_LINE_PROMPT'));
     const index = Number.parseInt(answer.trim(), 10);
@@ -460,7 +476,8 @@ export const login = async (options: {
   // Without a new key, re-login heals a stale stored profile in place (issue #309).
   const anomalies = stored ? storedAnomalies(stored) : [];
   if (stored && anomalies.length > 0) {
-    anomalies.forEach((anomaly) => logger.warn(anomaly));
+    // One diagnostic block (issue #315) instead of one warn line per anomaly.
+    logger.warn(anomalies.join('\n'));
     const healed = await healStoredProfile(stored, flagLine, options.org);
     if (healed) return;
   }
@@ -488,9 +505,7 @@ export const login = async (options: {
         })());
 
   // Interactive prompt
-  console.log(`\n  ${lang.__('LOGIN_CHOOSE_METHOD')}\n`);
-  console.log(`    1. ${lang.__('LOGIN_OPTION_BROWSER')}`);
-  console.log(`    2. ${lang.__('LOGIN_OPTION_API_KEY')}\n`);
+  console.log(methodChooserMenu());
 
   const choice = await ask(lang.__('LOGIN_SELECT_CHOICE'));
 

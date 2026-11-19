@@ -55,12 +55,18 @@ const isInteractive = (): boolean => process.stdin.isTTY === true;
 const lineConflict = (source: string, line: string, resolvedLine: string): Error =>
   new Error(lang.__('SAAS_LINE_CONFLICT', { source, line, resolvedLine }));
 
+/** Issue #315: the profile picker is one report block, not a log stream. */
+export const profilePromptMenu = (profileKeys: string[], operation?: string): string =>
+  [
+    lang.__('SAAS_LINE_PROMPT_HEADER', { operation: operation ?? 'this command' }),
+    ...profileKeys.map((key, index) =>
+      lang.__('SAAS_LINE_PROMPT_OPTION', { index: String(index + 1), profileKey: key }),
+    ),
+  ].join('\n');
+
 /** Prompt among stored profiles; returns the chosen key or null to abort. */
 const promptProfile = async (profileKeys: string[], operation?: string): Promise<string | null> => {
-  logger.info(lang.__('SAAS_LINE_PROMPT_HEADER', { operation: operation ?? 'this command' }));
-  profileKeys.forEach((key, index) => {
-    logger.info(lang.__('SAAS_LINE_PROMPT_OPTION', { index: String(index + 1), profileKey: key }));
-  });
+  console.log(profilePromptMenu(profileKeys, operation));
   const answer = await readInput(
     lang.__('SAAS_LINE_PROMPT_SELECT', { count: String(profileKeys.length) }),
   );
