@@ -1626,14 +1626,17 @@ export const en = {
     'the plan command has been removed; use the diff command instead — it accepts the same options and arguments.',
   CMD_DEPLOY_DESC: 'deploy serverless Iac yaml',
   CMD_DESTROY_DESC: 'destroy serverless stack',
-  CMD_LOCAL_DESC: 'run Serverless application locally for debugging',
+  CMD_LOCAL_DESC:
+    'run Serverless application locally for debugging (uses no state backend — no login or cloud state involved)',
   CMD_FORCE_UNLOCK_DESC: 'manually remove a stuck lock (use with caution)',
   OPT_SI_API_KEY_EXISTING: 'authenticate with an existing API key',
-  OPT_FILE: 'specify the yaml file',
-  OPT_FILE_REMOTE_REQUIRED: 'specify the yaml file (required for remote backends)',
-  OPT_STAGE: 'specify the stage',
+  OPT_FILE:
+    'specify the yaml file; omitted, the first of {{files}} found in the working directory is used (a directory is searched for these names)',
+  OPT_FILE_REMOTE_REQUIRED:
+    'specify the yaml file (required for remote backends); omitted, the first of {{files}} found in the working directory is used',
+  OPT_STAGE: 'specify the stage; omitted, "default" is used',
   OPT_REGION: 'specify the region',
-  OPT_PROVIDER: 'specify the provider',
+  OPT_PROVIDER: 'specify the provider: {{values}}',
   OPT_ACCESS_KEY_ID: 'specify the AccessKeyId',
   OPT_ACCESS_KEY_SECRET: 'specify the AccessKeySecret',
   OPT_SECURITY_TOKEN: 'specify the SecurityToken',
@@ -1641,7 +1644,10 @@ export const en = {
   OPT_SI_API_KEY: 'ServerlessInsight API key (overrides SI_API_KEY env)',
   OPT_ORG:
     'Console org slug (lowercase letters, digits, hyphens; e.g. my-org). Assertion: the key must belong to this org',
-  OPT_LINE: 'Console line: international | china',
+  OPT_LINE:
+    'Console line: {{values}}. Omitted, it is inferred from the API key line segment, the yml org, the active profile, or an interactive prompt',
+  HELP_ROOT_EXAMPLES:
+    'Typical workflow:\n  si login                                        authenticate, then the profile is stored locally\n  si diff -f serverlessinsight.yml -s prod        preview changes before deploying\n  si deploy -f serverlessinsight.yml -s prod      deploy the stack\n  si show                                         inspect what is deployed\n  si destroy                                      tear the stack down\n\nSaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.',
   OPT_AUTO_APPROVE: 'skip interactive approval of plan before deploying',
   OPT_PARAMETER: 'override parameters',
   OPT_DEBUG: 'enable debug mode',

@@ -132,7 +132,11 @@ const writeFile = (file: CredentialsFile): void => {
   const serialized = JSON.stringify(file, null, 2);
   // Skip the write (and the mtime bump) when nothing changed.
   try {
-    if (fs.readFileSync(credPath, 'utf-8') === serialized) return;
+    if (fs.readFileSync(credPath, 'utf-8') === serialized) {
+      // An unchanged file still gets a loose mode repaired (chmod keeps content and mtime).
+      if ((fs.statSync(credPath).mode & 0o777) !== 0o600) fs.chmodSync(credPath, 0o600);
+      return;
+    }
   } catch {
     // First write (or unreadable file) — fall through and create it.
   }
@@ -170,7 +174,10 @@ export const saveProfile = (
 
 /** Validate-response patch applied by updateProfile. */
 type ProfilePatch = {
-  readonly orgSlug: string;
+  /** Verified slug; absent means the profile stays unverified (no re-key). */
+  readonly orgSlug?: string;
+  /** Console line actually validated against — overrides the stored key's line. */
+  readonly line?: ConsoleLineName;
   readonly orgId?: string;
   readonly orgName?: string;
   readonly userEmail?: string;
@@ -187,14 +194,17 @@ export const updateProfile = (
   const profile = splitProfileKey(profileKey);
   if (!file || !current || current.apiKey !== apiKey || !profile) return null;
 
-  const resolvedKey = toProfileKey(profile.line, patch.orgSlug);
+  // The destination line is the one validation actually used, never the stale
+  // profile key's prefix (a legacy file's prefix can be a fabricated default).
+  const reKey = typeof patch.orgSlug === 'string' && patch.orgSlug.length > 0;
+  const resolvedKey = reKey ? toProfileKey(patch.line ?? profile.line, patch.orgSlug!) : profileKey;
   if (resolvedKey !== profileKey && file.profiles[resolvedKey]) return null;
 
   const profiles = { ...file.profiles };
   delete profiles[profileKey];
   profiles[resolvedKey] = {
     ...current,
-    orgSlug: patch.orgSlug,
+    ...(reKey ? { orgSlug: patch.orgSlug } : {}),
     ...(patch.orgId !== undefined ? { orgId: patch.orgId } : {}),
     ...(patch.orgName !== undefined ? { orgName: patch.orgName } : {}),
     ...(patch.userEmail !== undefined ? { userEmail: patch.userEmail } : {}),
