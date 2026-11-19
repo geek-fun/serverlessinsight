@@ -60,6 +60,22 @@ describe('Deploy Flow Service Test', () => {
     await cleanScopedState('insight-poc-deploy-app', 'insight-poc-deploy');
   });
 
+  describe('Config & Secrets resolution (epic #53 P1)', () => {
+    it('fails closed when config_sets refs exist on a non-SaaS backend', async () => {
+      await expect(
+        deploy({
+          location: path.join(fixturesDir, 'config-resolution/local-backend-with-ref.yml'),
+          stage: 'dev',
+          autoApprove: true,
+          region: 'cn-hangzhou',
+          provider: 'aliyun',
+        }),
+      ).rejects.toThrow(/CONFIG_RESOLVE_REQUIRES_SAAS/);
+      // Nothing was provisioned — the failure happens before any cloud call.
+      expect(mockClient.fc3.createFunction).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Aliyun FC3 Deploy', () => {
     it('should deploy single FC3 function and save state', async () => {
       await deploy({
