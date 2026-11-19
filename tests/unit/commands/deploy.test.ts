@@ -59,6 +59,35 @@ jest.mock('../../../src/lang', () => ({
   lang: { __: (key: string) => key },
 }));
 
+// Default: NO config refs — the pre-#53 baseline behaviour for every test in
+// this file. Config-path tests override with mockReturnValueOnce.
+const mockedCollectConfigRefs = jest.fn<string[], []>(() => []);
+const mockedBeginConfigSession = jest.fn();
+const mockedApplyConfigResolution = jest.fn();
+const mockedEndConfigSession = jest.fn();
+const mockedResolveConfigRefsViaSaas = jest.fn();
+
+jest.mock('../../../src/common/configSession', () => ({
+  collectConfigRefs: () => mockedCollectConfigRefs(),
+  beginConfigSession: (...args: unknown[]) => mockedBeginConfigSession(...args),
+  applyConfigResolution: (...args: unknown[]) => mockedApplyConfigResolution(...args),
+  endConfigSession: (...args: unknown[]) => mockedEndConfigSession(...args),
+  // Other modules (iacHelper, envRedaction, planRedaction) import these.
+  activeConfigSession: jest.fn(),
+  markExactRef: jest.fn(),
+  getAppliedConfigMeta: jest.fn(),
+  setAppliedConfigMeta: jest.fn(),
+  configRefMarker: jest.fn(),
+  parseConfigRefMarker: jest.fn(),
+  isConfigRefMarker: jest.fn((): boolean => false),
+  PLACEHOLDER_PATTERN: /⟦si-cfg:(\d+)⟧/g,
+  CONFIG_REF_TEMPLATE: /\$\{config_sets\.([^}]+)\}/g,
+}));
+
+jest.mock('../../../src/common/configClient', () => ({
+  resolveConfigRefsViaSaas: (...args: unknown[]) => mockedResolveConfigRefsViaSaas(...args),
+}));
+
 jest.mock('node:readline');
 
 const aliyunRawIac = {
@@ -124,6 +153,112 @@ const setupAliyunMocks = () => {
 describe('unit test for deploy command', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('resolves config refs and injects the runtime token on a SaaS deploy (epic #53)', async () => {
+    setupAliyunMocks();
+
+    const session = {
+      resolved: new Map<
+        string,
+        { value: string; versionNumber: number; secret: boolean; scope: string; configSet: string }
+      >([
+        [
+          'db.host',
+          {
+            value: 'db.prod.internal',
+            versionNumber: 5,
+            secret: false,
+            scope: 'stage',
+            configSet: 'db',
+          },
+        ],
+      ]),
+      records: new Map(),
+      placeholderOf: jest.fn(),
+    };
+    const withRefs = {
+      ...aliyunRawIac,
+      org: 'my-org',
+      backend: { type: 'SAAS' },
+    };
+
+    // Once-only stubs — persistent mocks would leak into every later deploy test.
+    // The yaml must carry the SaaS backend for the config path to engage.
+    mockedParseYaml.mockReturnValueOnce(withRefs);
+    // Pass 1: revalYaml hands back sentinels; the real applyConfigResolution
+    // substitutes them in place — the stub mimics that mutation.
+    mockedRevalYaml.mockReturnValueOnce({
+      ...aliyunIac,
+      functions: [{ key: 'insight_poc_fn', environment: { DB_HOST: '⟦si-cfg:0⟧' } }],
+    });
+    mockedCollectConfigRefs.mockReturnValueOnce(['db.host']);
+    mockedBeginConfigSession.mockReturnValueOnce(session);
+    mockedResolveConfigRefsViaSaas.mockResolvedValueOnce(session.resolved);
+    mockedApplyConfigResolution.mockImplementationOnce(
+      (iac: { functions: Array<{ environment: Record<string, string> }> }) => {
+        iac.functions[0]!.environment.DB_HOST = 'db.prod.internal';
+        return {
+          functionEnvRefs: new Map(),
+          databasePasswordRefs: new Map(),
+          secretValues: new Set(),
+          refByValue: new Map(),
+        };
+      },
+    );
+    const saasBackend = {
+      ...mockBackend,
+      issueRuntimeConfigToken: jest.fn().mockResolvedValue({
+        token: 'sirt_com_x',
+        consoleUrl: 'https://console.example.test',
+      }),
+    };
+    mockedCreateStateBackend.mockReturnValueOnce(saasBackend);
+
+    await deploy(baseOptions);
+
+    // resolve happens with the deploy stage and the yaml org anchor
+    expect(mockedResolveConfigRefsViaSaas).toHaveBeenCalledWith(['db.host'], {
+      stage: undefined,
+      siApiKey: undefined,
+      declaredOrg: 'my-org',
+      org: undefined,
+      line: undefined,
+    });
+    // the runtime token + console URL land in every function environment before planning
+    expect(mockedApplyConfigResolution).toHaveBeenCalled();
+    expect(saasBackend.issueRuntimeConfigToken).toHaveBeenCalledTimes(1);
+    // The plan sees the resolved value plus the injected runtime variables.
+    expect(mockedGenerateAliyunPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functions: [
+          expect.objectContaining({
+            environment: expect.objectContaining({
+              DB_HOST: 'db.prod.internal',
+              SI_CONFIG_TOKEN: 'sirt_com_x',
+              SI_CONSOLE_URL: 'https://console.example.test',
+            }),
+          }),
+        ],
+      }),
+      saasBackend,
+    );
+    expect(mockedDeployStack).toHaveBeenCalled();
+  });
+
+  it('fails closed on config refs without a SaaS backend (epic #53)', async () => {
+    setupAliyunMocks();
+    const withRefs = {
+      ...aliyunRawIac,
+      backend: { type: 'LOCAL' },
+    };
+    mockedCollectConfigRefs.mockReturnValueOnce(['db.host']);
+    mockedParseYaml.mockReturnValueOnce(withRefs);
+    // The session must NOT stay active after the failure.
+    await expect(deploy(baseOptions)).rejects.toThrow(/CONFIG_RESOLVE_REQUIRES_SAAS/);
+    expect(mockedResolveConfigRefsViaSaas).not.toHaveBeenCalled();
+    expect(mockedEndConfigSession).toHaveBeenCalled();
+    expect(mockedDeployStack).not.toHaveBeenCalled();
   });
 
   it('should deploy with aliyun provider and autoApprove', async () => {
