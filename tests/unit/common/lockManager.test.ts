@@ -11,20 +11,31 @@ import os from 'node:os';
 import path from 'node:path';
 
 describe('LockManager', () => {
-  const testDir = '/tmp/test-lock-manager';
-  const statePath = path.join(testDir, '.serverlessinsight', 'state.json');
-  const lockPath = `${statePath}${LOCK_FILE_SUFFIX}`;
+  // Per-test temp dir: a fixed /tmp path can collide with a delete-pending file
+  // on Windows (AV/indexer holds the handle), which is exactly the kind of
+  // cross-runner flake this suite hit once.
+  let testDir: string;
+  let statePath: string;
+  let lockPath: string;
+
+  const waitForLockFile = async (): Promise<void> => {
+    // Deterministic setup: wait until the lock file really exists instead of
+    // guessing with a sleep — a slow runner can otherwise start the competing
+    // acquire before the first one created the file.
+    const deadline = Date.now() + 5000;
+    while (!fs.existsSync(lockPath)) {
+      if (Date.now() > deadline) throw new Error('first withLock did not create the lock file');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
 
   beforeEach(() => {
-    // Clean up test directory
-    if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true, force: true });
-    }
-    fs.mkdirSync(testDir, { recursive: true });
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'si-lock-manager-'));
+    statePath = path.join(testDir, '.serverlessinsight', 'state.json');
+    lockPath = `${statePath}${LOCK_FILE_SUFFIX}`;
   });
 
   afterEach(() => {
-    // Clean up after tests
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
@@ -98,12 +109,16 @@ describe('LockManager', () => {
         { timeout: 5000, retryDelay: 200 },
       );
 
-      // Wait a bit to ensure first lock is acquired
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForLockFile();
 
-      // Try to acquire second lock - should fail quickly
+      // Try to acquire second lock - should fail fast: maxRetries 1 bounds the
+      // wait to one retryDelay, far below the 2s the first lock is held.
       await expect(
-        withLock(statePath, 'destroy', async () => 'result2', { timeout: 1000, retryDelay: 200 }),
+        withLock(statePath, 'destroy', async () => 'result2', {
+          timeout: 1000,
+          retryDelay: 200,
+          maxRetries: 1,
+        }),
       ).rejects.toThrow(LockError);
 
       // Wait for first lock to complete
@@ -122,13 +137,13 @@ describe('LockManager', () => {
         { timeout: 5000, retryDelay: 200 },
       );
 
-      // Wait a bit
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForLockFile();
 
       try {
         await withLock(statePath, 'destroy', async () => 'result2', {
           timeout: 1000,
           retryDelay: 200,
+          maxRetries: 1,
         });
         throw new Error('Should have thrown LockError');
       } catch (error) {
@@ -158,8 +173,7 @@ describe('LockManager', () => {
         { timeout: 5000 },
       );
 
-      // Wait for lock to be acquired
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForLockFile();
 
       // Force unlock
       expect(lockId).toBeDefined();
@@ -186,8 +200,7 @@ describe('LockManager', () => {
         { timeout: 5000 },
       );
 
-      // Wait for lock
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForLockFile();
 
       expect(() => forceUnlock(statePath, 'wrong-id')).toThrow('Lock ID mismatch');
 
