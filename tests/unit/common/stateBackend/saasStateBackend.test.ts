@@ -212,7 +212,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       expect(mockApiClient.get).not.toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
     });
 
-    it('should fetch the slug once and heal the credentials file when the stored profile lacks it', async () => {
+    it('should fetch the slug once and keep the credentials file untouched (issue #309)', async () => {
       mockLineCtxResolved({ orgSlug: undefined });
       const local = await createSaasStateBackend({ scope, declaredOrg: 'example-org' });
       // Call order: provision's validate roundtrip, capabilities probe, then state/current
@@ -222,11 +222,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       await local.loadState();
 
       expect(mockApiClient.get).toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
-      expect(updateProfile).toHaveBeenCalledWith(
-        'international/test-org',
-        mockLineCtx().apiKey,
-        expect.objectContaining({ orgSlug: 'example-org' }),
-      );
+      expect(updateProfile).not.toHaveBeenCalled();
       expect(mockApiClient.post).toHaveBeenCalled();
     });
 
@@ -425,13 +421,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       const result = await local.loadState();
 
-      // The slug heals into the credentials file, but the state must not claim
-      // an org id that was never verified — the D-6 anchor stays honest.
-      expect(updateProfile).toHaveBeenCalledWith(
-        'international/test-org',
-        mockLineCtx().apiKey,
-        expect.objectContaining({ orgSlug: 'example-org' }),
-      );
+      // The state must not claim an org id that was never verified — the D-6 anchor stays honest.
+      expect(updateProfile).not.toHaveBeenCalled();
       expect(mockApiClient.post).toHaveBeenCalled();
       expect(result.orgId).toBe('');
     });

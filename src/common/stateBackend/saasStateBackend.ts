@@ -1,7 +1,6 @@
 import { createApiClient, ApiError } from '../apiClient';
 import type { ApiClient } from '../apiClient';
 import { assertOrgMatches, assertValidatedOrg, assertValidatedRegion } from '../consoleLines';
-import { updateProfile } from '../credentialStore';
 import { resolveLineContext, LineContext } from '../lineContext';
 import { logger } from '../logger';
 import {
@@ -222,12 +221,7 @@ export const createSaasStateBackend = async (
     assertValidatedOrg(targetOrg, orgSlug);
 
     const orgId = fetched?.orgId ?? local.orgId;
-    if (fetched?.orgSlug && lineCtx.profileKey) {
-      updateProfile(lineCtx.profileKey, lineCtx.apiKey, {
-        orgSlug: fetched.orgSlug,
-        ...(fetched.orgId ? { orgId: fetched.orgId } : {}),
-      });
-    }
+    // State commands never write credentials; the identity is for this run only.
     resolvedIdentity = { orgId, orgSlug };
     knownOrgId = orgId ?? knownOrgId;
     return resolvedIdentity;

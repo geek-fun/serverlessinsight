@@ -9,7 +9,6 @@ import {
   normalizeLineName,
   parseApiKeyLine,
   splitProfileKey,
-  toProfileKey,
 } from './consoleLines';
 import { findProfilesBySlug, loadCredentialsFile } from './credentialStore';
 
@@ -80,15 +79,16 @@ const promptProfile = async (profileKeys: string[], operation?: string): Promise
 export const resolveLineContext = async (
   params: ResolveLineContextParams,
 ): Promise<LineContext> => {
-  const file = loadCredentialsFile();
+  const explicitKey = params.siApiKey ?? process.env.SI_API_KEY;
+  const keySource =
+    params.siApiKey !== undefined ? 'flag' : explicitKey !== undefined ? 'env' : 'profile';
+  // A flag/env key is self-contained CI identity: never read credentials or select a profile.
+  const file = keySource === 'profile' ? loadCredentialsFile() : null;
   const profiles = file?.profiles ?? {};
   const activeKey = file?.active;
   const active = activeKey ? splitProfileKey(activeKey) : null;
   const targetSlug = params.declaredOrg ?? params.orgFlag;
 
-  const explicitKey = params.siApiKey ?? process.env.SI_API_KEY;
-  const keySource =
-    params.siApiKey !== undefined ? 'flag' : explicitKey !== undefined ? 'env' : 'profile';
   const keyLine = explicitKey ? parseApiKeyLine(explicitKey) : null;
   const flagLine = assertLineFlag(params.lineFlag);
   if (keyLine && flagLine && keyLine !== flagLine) {
@@ -136,7 +136,7 @@ export const resolveLineContext = async (
     lineSource = 'active';
   }
 
-  if (!line && isInteractive()) {
+  if (!line && keySource === 'profile' && isInteractive()) {
     const candidates = Object.keys(profiles).filter(
       (key) => splitProfileKey(key) && (!targetSlug || !profiles[key]?.orgSlug),
     );
@@ -154,12 +154,9 @@ export const resolveLineContext = async (
     );
   }
 
-  if (!profileKey && !targetSlug && active && activeKey) {
-    if (active.line === line) {
-      profileKey = activeKey;
-    } else if (keyLine) {
-      profileKey = toProfileKey(line, active.orgSlug);
-    }
+  // Only profile-sourced runs land here — an explicit key never borrows a profile.
+  if (!profileKey && !targetSlug && active && activeKey && active.line === line) {
+    profileKey = activeKey;
   }
   // A legacy active profile has no verified slug until the first validate call.
   if (!profileKey && activeKey && active?.line === line && !profiles[activeKey]?.orgSlug) {

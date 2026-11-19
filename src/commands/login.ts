@@ -2,8 +2,15 @@ import * as readline from 'node:readline';
 import { createServer, Server } from 'node:http';
 import open from 'open';
 import { logger } from '../common';
-import { validateApiKey } from '../common/apiClient';
-import { saveProfile, loadCredentialsFile } from '../common/credentialStore';
+import { ApiError, validateApiKey } from '../common/apiClient';
+import {
+  ConsoleProfile,
+  CredentialsFile,
+  loadCredentialsFile,
+  readLegacyConsoleUrl,
+  saveProfile,
+  updateProfile,
+} from '../common/credentialStore';
 import {
   CONSOLE_LINES,
   ConsoleLineName,
@@ -12,6 +19,8 @@ import {
   consoleUiOriginFor,
   normalizeLineName,
   parseApiKeyLine,
+  resolveLineFromOrigin,
+  splitProfileKey,
   toProfileKey,
   validateApiKeyFormat,
 } from '../common/consoleLines';
@@ -54,6 +63,99 @@ const promptLinePicker = async (): Promise<ConsoleLineName> => {
   }
 };
 
+/** The active stored profile, for login's heal flow (issue #309). */
+type StoredProfile = {
+  readonly file: CredentialsFile;
+  readonly profileKey: string;
+  readonly profile: ConsoleProfile;
+};
+
+const storedAnomalies = (stored: StoredProfile): string[] => {
+  const anomalies: string[] = [];
+  const legacyUrl = readLegacyConsoleUrl();
+  if (legacyUrl !== null) {
+    anomalies.push(lang.__('LOGIN_DIAG_LEGACY_FILE', { url: legacyUrl }));
+    if (!resolveLineFromOrigin(legacyUrl)) {
+      anomalies.push(lang.__('LOGIN_DIAG_LOCALHOST_URL', { url: legacyUrl }));
+    }
+  }
+  if (!parseApiKeyLine(stored.profile.apiKey)) {
+    anomalies.push(lang.__('LOGIN_DIAG_LEGACY_KEY'));
+  }
+  if (!stored.profile.orgSlug) {
+    anomalies.push(lang.__('LOGIN_DIAG_MISSING_SLUG', { profileKey: stored.profileKey }));
+  }
+  return anomalies;
+};
+
+/** Pin the stored profile's line; a legacy file's in-memory prefix is a fabricated default. */
+const storedLineForHeal = (
+  stored: StoredProfile,
+  flagLine?: ConsoleLineName | null,
+): ConsoleLineName | null => {
+  const keyLine = parseApiKeyLine(stored.profile.apiKey);
+  if (keyLine) return keyLine;
+  if (flagLine) return flagLine;
+  const legacyUrl = readLegacyConsoleUrl();
+  if (legacyUrl !== null) return resolveLineFromOrigin(legacyUrl);
+  return splitProfileKey(stored.profileKey)?.line ?? null;
+};
+
+/** Re-key the stored profile to line/orgSlug after validate; false keeps it untouched. */
+const healStoredProfile = async (
+  stored: StoredProfile,
+  flagLine?: ConsoleLineName | null,
+): Promise<boolean> => {
+  const line = storedLineForHeal(stored, flagLine);
+  if (!line) {
+    logger.error(lang.__('LOGIN_HEAL_LINE_UNRESOLVED'));
+    return false;
+  }
+  if (!validateApiKeyFormat(stored.profile.apiKey)) {
+    logger.error(lang.__('LOGIN_KEY_FORMAT_INVALID'));
+    return false;
+  }
+
+  logger.info(lang.__('LOGIN_VALIDATING_KEY'));
+  try {
+    const result = await validateApiKey(stored.profile.apiKey, consoleOriginFor(line));
+    const expectedSegment = CONSOLE_LINES[line].keySegment;
+    if (result.region && result.region !== expectedSegment) {
+      logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine: result.region, line }));
+      return false;
+    }
+    const slug = result.orgSlug || result.orgId || 'unknown';
+    const healed = updateProfile(stored.profileKey, stored.profile.apiKey, {
+      orgSlug: slug,
+      ...(result.orgId ? { orgId: result.orgId } : {}),
+      ...(result.orgName ? { orgName: result.orgName } : {}),
+      ...(result.userEmail ? { userEmail: result.userEmail } : {}),
+    });
+    if (!healed) {
+      logger.error(lang.__('LOGIN_HEAL_SKIPPED'));
+      return false;
+    }
+    if (healed !== stored.profileKey) {
+      logger.debug(lang.__('LOGIN_HEAL_DEBUG', { from: stored.profileKey, to: healed }));
+    }
+    logger.info(
+      lang.__('LOGIN_HEALED', {
+        profileKey: healed,
+        userEmail: result.userEmail || stored.profile.userEmail || '(unknown)',
+      }),
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      logger.error(lang.__('LOGIN_HEAL_KEY_INVALID'));
+    } else {
+      logger.error(lang.__('LOGIN_HEAL_UNREACHABLE'));
+    }
+    logger.debug(error instanceof Error ? error.message : String(error));
+    return false;
+  }
+};
+
 type LoginIdentity = {
   orgId: string;
   orgName: string;
@@ -81,7 +183,19 @@ const finalizeLogin = (
     return false;
   }
   if (orgFlag && identity.orgSlug && identity.orgSlug !== orgFlag) {
+    // Issue #309: --org is an assertion — name both fix paths and the stored side.
     logger.error(lang.__('LOGIN_ORG_MISMATCH', { actual: identity.orgSlug, expected: orgFlag }));
+    const stored = loadCredentialsFile();
+    const storedKey = stored?.active;
+    const storedProfile = storedKey ? stored?.profiles[storedKey] : undefined;
+    if (storedProfile) {
+      logger.error(
+        lang.__('LOGIN_ORG_MISMATCH_ACTIVE', {
+          profileKey: storedKey!,
+          orgName: storedProfile.orgName || storedProfile.orgSlug || storedProfile.orgId,
+        }),
+      );
+    }
     return false;
   }
   const slug = identity.orgSlug || identity.orgId || 'unknown';
@@ -131,7 +245,12 @@ const loginWithKey = async (
       result.region,
     );
   } catch (error) {
-    logger.error(lang.__('LOGIN_KEY_INVALID'));
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      logger.error(lang.__('LOGIN_KEY_INVALID'));
+    } else {
+      // A network/5xx failure says nothing about the key itself.
+      logger.error(lang.__('LOGIN_VALIDATE_UNREACHABLE'));
+    }
     logger.debug(error instanceof Error ? error.message : String(error));
     return false;
   }
@@ -283,21 +402,12 @@ export const login = async (options: {
   line?: string;
   org?: string;
 }): Promise<void> => {
-  // Check if already logged in
   const file = loadCredentialsFile();
-  const activeProfile = file?.active ? file.profiles[file.active] : undefined;
-  if (activeProfile && process.stdin.isTTY === true) {
-    const answer = await ask(
-      lang.__('LOGIN_ALREADY_LOGGED_IN', {
-        userEmail: activeProfile.userEmail || '',
-        orgName: activeProfile.orgName || activeProfile.orgId,
-      }),
-    );
-    if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
-      logger.info(lang.__('LOGIN_CANCELLED'));
-      return;
-    }
-  }
+  const activeKey = file?.active;
+  const stored: StoredProfile | null =
+    file && activeKey && file.profiles[activeKey]
+      ? { file, profileKey: activeKey, profile: file.profiles[activeKey]! }
+      : null;
 
   const flagLine = normalizeLineName(options.line);
 
@@ -309,7 +419,15 @@ export const login = async (options: {
       logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine, line: flagLine }));
       return;
     }
-    const line = keyLine ?? flagLine ?? normalizeLineName(process.env.SI_CONSOLE_LINE);
+    // Re-entering the stored key: its profile already pins the line.
+    const storedLine = (() => {
+      if (!stored || stored.profile.apiKey !== key || parseApiKeyLine(key)) return null;
+      const legacyUrl = readLegacyConsoleUrl();
+      if (legacyUrl !== null) return resolveLineFromOrigin(legacyUrl);
+      return splitProfileKey(stored.profileKey)?.line ?? null;
+    })();
+    const line =
+      keyLine ?? flagLine ?? normalizeLineName(process.env.SI_CONSOLE_LINE) ?? storedLine;
     if (!line) {
       if (process.stdin.isTTY === true) {
         const picked = await promptLinePicker();
@@ -324,6 +442,27 @@ export const login = async (options: {
     }
     await loginWithKey(key, line, options.org);
     return;
+  }
+
+  // Without a new key, re-login heals a stale stored profile in place (issue #309).
+  const anomalies = stored ? storedAnomalies(stored) : [];
+  if (stored && anomalies.length > 0) {
+    anomalies.forEach((anomaly) => logger.warn(anomaly));
+    const healed = await healStoredProfile(stored, flagLine);
+    if (healed) return;
+  }
+
+  if (stored && anomalies.length === 0 && process.stdin.isTTY === true) {
+    const answer = await ask(
+      lang.__('LOGIN_ALREADY_LOGGED_IN', {
+        userEmail: stored.profile.userEmail || '',
+        orgName: stored.profile.orgName || stored.profile.orgId,
+      }),
+    );
+    if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+      logger.info(lang.__('LOGIN_CANCELLED'));
+      return;
+    }
   }
 
   // Interactive flow: pick the region first (ADR-008), then the method.

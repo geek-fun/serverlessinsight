@@ -19,6 +19,7 @@ const mockFs = {
   existsSync: jest.fn(),
   readFileSync: jest.fn(),
   writeFileSync: jest.fn(),
+  renameSync: jest.fn(),
   chmodSync: jest.fn(),
   unlinkSync: jest.fn(),
   mkdirSync: jest.fn(),
@@ -38,6 +39,7 @@ import {
   findProfilesBySlug,
   resolveApiKey,
   bestEffortConsoleOrigin,
+  readLegacyConsoleUrl,
 } from '../../../src/common/credentialStore';
 import { parseApiKeyLine, validateApiKeyFormat } from '../../../src/common/credentialStore';
 
@@ -188,7 +190,14 @@ describe('credentialStore (ADR-008 v2)', () => {
       const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
       expect(written.active).toBe('china/example-org');
       expect(written.profiles['china/example-org']).toEqual(chinaProfile);
-      expect(mockFs.chmodSync).toHaveBeenCalledWith(mockCredentialsPath, 0o600);
+      const [tmpPath, , options] = mockFs.writeFileSync.mock.calls[0] as [
+        string,
+        string,
+        { encoding: string; mode: number },
+      ];
+      expect(tmpPath).toContain('credentials.json.tmp-');
+      expect(options).toEqual({ encoding: 'utf-8', mode: 0o600 });
+      expect(mockFs.renameSync).toHaveBeenCalledWith(tmpPath, mockCredentialsPath);
     });
 
     it('keeps the existing active profile when activating is not requested', () => {
@@ -395,6 +404,114 @@ describe('credentialStore (ADR-008 v2)', () => {
       expect(parseApiKeyLine(chinaKey)).toBe('china');
       expect(parseApiKeyLine(intlKey)).toBe('international');
       expect(parseApiKeyLine(legacyKey)).toBeNull();
+    });
+  });
+
+  describe('atomic, change-aware writes (issue #309)', () => {
+    it('skips the write entirely when the serialized content is unchanged', () => {
+      const file = {
+        active: 'china/example-org',
+        profiles: { 'china/example-org': chinaProfile },
+      };
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(file, null, 2));
+
+      saveProfile('china', chinaProfile);
+
+      expect(mockFs.writeFileSync).not.toHaveBeenCalled();
+      expect(mockFs.renameSync).not.toHaveBeenCalled();
+    });
+
+    it('writes through a private 0600 temp file and renames it into place', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({ active: 'china/old', profiles: { 'china/old': chinaProfile } }),
+      );
+
+      saveProfile('china', { ...chinaProfile, orgSlug: 'renamed-org' });
+
+      const [tmpPath, , options] = mockFs.writeFileSync.mock.calls[0] as [
+        string,
+        string,
+        { encoding: string; mode: number },
+      ];
+      expect(tmpPath).toContain('credentials.json.tmp-');
+      expect(options).toEqual({ encoding: 'utf-8', mode: 0o600 });
+      expect(mockFs.renameSync).toHaveBeenCalledWith(tmpPath, mockCredentialsPath);
+    });
+  });
+
+  describe('updateProfile return contract (issue #309)', () => {
+    const legacyKey2 = 'china/legacy-01234567';
+    const legacyProfile = { ...chinaProfile, orgSlug: undefined };
+
+    it('returns the new key when the profile is re-keyed', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({ active: legacyKey2, profiles: { [legacyKey2]: legacyProfile } }),
+      );
+
+      expect(updateProfile(legacyKey2, chinaProfile.apiKey, { orgSlug: 'example-org' })).toBe(
+        'china/example-org',
+      );
+    });
+
+    it('returns null when the key does not own the profile or the target exists', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          profiles: { [legacyKey2]: legacyProfile, 'china/example-org': chinaProfile },
+        }),
+      );
+
+      expect(updateProfile(legacyKey2, 'different-key', { orgSlug: 'other' })).toBeNull();
+      expect(updateProfile(legacyKey2, chinaProfile.apiKey, { orgSlug: 'example-org' })).toBeNull();
+      expect(updateProfile('china/ghost', chinaProfile.apiKey, { orgSlug: 'other' })).toBeNull();
+    });
+
+    it('refreshes orgName and userEmail from the validate response', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({ active: legacyKey2, profiles: { [legacyKey2]: legacyProfile } }),
+      );
+
+      updateProfile(legacyKey2, chinaProfile.apiKey, {
+        orgSlug: 'example-org',
+        orgName: 'Renamed Org',
+        userEmail: 'new@example.com',
+      });
+
+      const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
+      expect(written.profiles['china/example-org']).toEqual({
+        ...chinaProfile,
+        orgName: 'Renamed Org',
+        userEmail: 'new@example.com',
+      });
+    });
+  });
+
+  describe('readLegacyConsoleUrl (issue #309)', () => {
+    it('returns the raw consoleUrl of a legacy file without the in-memory heal', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({ apiKey: legacyKey, consoleUrl: 'http://localhost:3002', orgId: 'org-1' }),
+      );
+
+      expect(readLegacyConsoleUrl()).toBe('http://localhost:3002');
+    });
+
+    it('returns null for v2 files, missing files and unparsable content', () => {
+      mockFs.existsSync.mockReturnValue(false);
+      expect(readLegacyConsoleUrl()).toBeNull();
+
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({ active: 'china/example-org', profiles: {} }),
+      );
+      expect(readLegacyConsoleUrl()).toBeNull();
+
+      mockFs.readFileSync.mockReturnValue('not json');
+      expect(readLegacyConsoleUrl()).toBeNull();
     });
   });
 });
