@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-11-19
+
+### Added
+
+- `si --help` text is now generated from a single command registry, so every command
+  documents exactly the flags it accepts and the option surfaces stay aligned across
+  commands ([#308](https://github.com/geek-fun/serverlessinsight/issues/308)).
+
+### Fixed
+
+- `si login` now repairs stale credential profiles automatically, and CI-injected keys
+  no longer get written into the local credentials file
+  ([#309](https://github.com/geek-fun/serverlessinsight/issues/309)).
+- Repaired credential profiles are validated during the heal, so a broken profile can no
+  longer pass with missing or malformed entries
+  ([#313](https://github.com/geek-fun/serverlessinsight/pull/313)).
+- English help text for the `--org` and `--line` options renders properly instead of raw
+  message keys ([#307](https://github.com/geek-fun/serverlessinsight/pull/307)).
+
+## [0.9.9] - 2026-11-18
+
+### Added
+
+- One `si migrate` run now migrates every stage that carries resources, instead of only
+  the selected stage ([#303](https://github.com/geek-fun/serverlessinsight/pull/303)).
+- Environment values flagged as secrets are redacted in captured state records
+  ([#304](https://github.com/geek-fun/serverlessinsight/pull/304)).
+
+### Fixed
+
+- `si login` now accepts browser POST callbacks and CORS preflight requests, so logins
+  that redirect through a POST complete normally
+  ([#305](https://github.com/geek-fun/serverlessinsight/pull/305)).
+
 ## [0.9.8] - 2026-11-16
 
 ### ⚠️ Breaking change
