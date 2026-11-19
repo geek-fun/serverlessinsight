@@ -21,6 +21,7 @@ jest.mock('../../../src/common', () => ({
 }));
 
 import { forceUnlockCommand } from '../../../src/commands/forceUnlock';
+import { logger } from '../../../src/common/logger';
 import { withLock, readLockFileForCommand } from '../../../src/common/lockManager';
 import { getStatePath } from '../../../src/common/stateManager';
 import { LOCK_FILE_SUFFIX } from '../../../src/common/constants';
@@ -197,6 +198,34 @@ describe('forceUnlockCommand', () => {
     await forceUnlockCommand('any-lock-id', { location: ymlPath });
 
     loggerInfo.mockRestore();
+  });
+
+  it('pins the console URL of the SaaS hint to the --line origin (issue #308)', async () => {
+    const ymlPath = path.join(testDir, 'saas.yml');
+    fs.writeFileSync(
+      ymlPath,
+      [
+        'version: 0.1.0',
+        'provider:',
+        '  name: aliyun',
+        '  region: cn-hongkong',
+        'app: test-app',
+        'service: test-service',
+      ].join('\n'),
+    );
+
+    await forceUnlockCommand('any-lock-id', { location: ymlPath, line: 'china' });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining('https://console.serverlessinsight.cn'),
+    );
+  });
+
+  it('rejects an unknown --line value up front (issue #308)', async () => {
+    await expect(forceUnlockCommand('any-lock-id', { line: 'no-such-line' })).rejects.toThrow(
+      'no-such-line',
+    );
+    expect(mockCreateStateBackend).not.toHaveBeenCalled();
   });
 
   it('should throw when a configured backend has no lock', async () => {

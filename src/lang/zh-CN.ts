@@ -1479,21 +1479,27 @@ export const zhCN = {
     'plan 命令已被移除；请改用 diff 命令——两者接受完全相同的选项和参数。迁移方式：将 si plan 替换为 si diff，所有参数保持不变。',
   CMD_DEPLOY_DESC: '部署 serverless IaC yaml',
   CMD_DESTROY_DESC: '销毁 serverless 资源栈',
-  CMD_LOCAL_DESC: '本地运行 Serverless 应用进行调试',
+  CMD_LOCAL_DESC:
+    '本地运行 Serverless 应用进行调试（不使用任何 state 后端——无需登录，不涉及云端状态）',
   CMD_FORCE_UNLOCK_DESC: '手动移除卡住的锁（谨慎使用）',
   OPT_SI_API_KEY_EXISTING: '使用已有的 API key 登录',
-  OPT_FILE: '指定 yaml 文件',
-  OPT_FILE_REMOTE_REQUIRED: '指定 yaml 文件（远端后端必填）',
-  OPT_STAGE: '指定 stage',
+  OPT_FILE:
+    '指定 yaml 文件；省略时使用工作目录中按 {{files}} 顺序找到的第一个文件（传入目录时在其中查找这些文件名）',
+  OPT_FILE_REMOTE_REQUIRED:
+    '指定 yaml 文件（远端后端必填）；省略时使用工作目录中按 {{files}} 顺序找到的第一个文件',
+  OPT_STAGE: '指定 stage；省略时使用 "default"',
   OPT_REGION: '指定 region',
-  OPT_PROVIDER: '指定 provider',
+  OPT_PROVIDER: '指定 provider：{{values}}',
   OPT_ACCESS_KEY_ID: '指定 AccessKeyId',
   OPT_ACCESS_KEY_SECRET: '指定 AccessKeySecret',
   OPT_SECURITY_TOKEN: '指定 SecurityToken',
   OPT_NO_REFRESH: '跳过线上探测，仅对比配置与状态（无漂移检测）',
   OPT_SI_API_KEY: 'ServerlessInsight API key（覆盖 SI_API_KEY 环境变量）',
   OPT_ORG: 'Console 组织 slug（仅小写字母、数字、连字符，如 my-org）。断言：密钥必须属于该组织',
-  OPT_LINE: 'Console 线路：international | china',
+  OPT_LINE:
+    'Console 线路：{{values}}。省略时按 API key 线段、yml org、激活的 profile、交互提示依次推断',
+  HELP_ROOT_EXAMPLES:
+    '典型工作流：\n  si login                                        登录 Console，profile 保存在本地\n  si diff -f serverlessinsight.yml -s prod        部署前预览变更\n  si deploy -f serverlessinsight.yml -s prod      部署资源栈\n  si show                                         查看已部署内容\n  si destroy                                      销毁资源栈\n\nSaaS state 命令需要 Console 凭据：先执行一次 si login，或在命令支持时显式传入 --si-api-key。执行 si <command> --help 查看完整选项。',
   OPT_AUTO_APPROVE: '跳过部署前的计划交互确认',
   OPT_PARAMETER: '覆盖参数',
   OPT_DEBUG: '开启调试模式',

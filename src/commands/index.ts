@@ -24,6 +24,18 @@ import { migrate } from './migrate';
 import { lang, hasLangKey, lookupErrorCode } from '../lang';
 import { isJsonMode, setJsonMode, writeJson } from '../common/jsonOutput';
 import { parseYaml, revalYaml } from '../parser';
+import { buildFileProbeValues, buildLineValues, buildProviderValues } from '../common/helpText';
+
+// Option help derived from their single-source registries (issue #308):
+// the line origins come from CONSOLE_LINES, the provider list from
+// IMPLEMENTED_PROVIDERS and the file probe list from DEFAULT_IAC_FILES, so
+// the help can never silently drift from the accepted values.
+const LINE_OPTION_TEXT = lang.__('OPT_LINE', { values: buildLineValues() });
+const PROVIDER_OPTION_TEXT = lang.__('OPT_PROVIDER', { values: buildProviderValues() });
+const FILE_OPTION_TEXT = lang.__('OPT_FILE', { files: buildFileProbeValues() });
+const FILE_REMOTE_OPTION_TEXT = lang.__('OPT_FILE_REMOTE_REQUIRED', {
+  files: buildFileProbeValues(),
+});
 
 const MAX_ERROR_MESSAGE_LENGTH = 2000;
 const truncateErrorMessage = (message: string | undefined): string => {
@@ -111,13 +123,17 @@ const actionWrapper = <T extends unknown[]>(
 
 const program = new Command();
 
-program.name('si').description(lang.__('CMD_ROOT_DESC')).version(getVersion());
+program
+  .name('si')
+  .description(lang.__('CMD_ROOT_DESC'))
+  .version(getVersion())
+  .addHelpText('after', `\n${lang.__('HELP_ROOT_EXAMPLES')}`);
 
 program
   .command('login')
   .description(lang.__('CMD_LOGIN_DESC'))
   .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY_EXISTING'))
-  .option('--line <line>', lang.__('OPT_LINE'))
+  .option('--line <line>', LINE_OPTION_TEXT)
   .option('--org <slug>', lang.__('OPT_ORG'))
   .action(
     actionWrapper('login', async ({ siApiKey, line, org }) => {
@@ -156,12 +172,12 @@ program
 program
   .command('show')
   .description(lang.__('CMD_SHOW_DESC'))
-  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .option('-r, --region <region>', lang.__('OPT_REGION'))
-  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
   .option('--org <slug>', lang.__('OPT_ORG'))
-  .option('--line <line>', lang.__('OPT_LINE'))
+  .option('--line <line>', LINE_OPTION_TEXT)
   .option('--json', lang.__('OPT_JSON'))
   .action(
     actionWrapper('show', async ({ file, stage, region, provider, org, line, json }) => {
@@ -188,7 +204,7 @@ program
 program
   .command('validate')
   .description(lang.__('CMD_VALIDATE_DESC'))
-  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .option('--json', lang.__('OPT_JSON'))
   .action(
@@ -209,18 +225,19 @@ program
 program
   .command('diff')
   .description(lang.__('CMD_DIFF_DESC'))
-  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .option('-r, --region <region>', lang.__('OPT_REGION'))
-  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
   .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
   .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
   .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
   .option('--json', lang.__('OPT_JSON'))
   .option('--no-color', lang.__('OPT_NO_COLOR'))
   .option('--org <slug>', lang.__('OPT_ORG'))
-  .option('--line <line>', lang.__('OPT_LINE'))
+  .option('--line <line>', LINE_OPTION_TEXT)
   .option(
     '-p, --parameter <key=value>',
     lang.__('OPT_PARAMETER'),
@@ -235,17 +252,17 @@ program
 program
   .command('deploy')
   .description(lang.__('CMD_DEPLOY_DESC'))
-  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .option('-r, --region <region>', lang.__('OPT_REGION'))
   .option('--bind-unknown-region <region>', lang.__('OPT_BIND_UNKNOWN_REGION'))
-  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
   .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
   .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
   .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
   .option('--org <slug>', lang.__('OPT_ORG'))
-  .option('--line <line>', lang.__('OPT_LINE'))
+  .option('--line <line>', LINE_OPTION_TEXT)
   .option('-y, --auto-approve', lang.__('OPT_AUTO_APPROVE'))
   .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
   .option(
@@ -300,16 +317,16 @@ program
 program
   .command('migrate')
   .description(lang.__('CMD_MIGRATE_DESC'))
-  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .option('-r, --region <region>', lang.__('OPT_REGION'))
-  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
   .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
   .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
   .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
   .option('--org <slug>', lang.__('OPT_ORG'))
-  .option('--line <line>', lang.__('OPT_LINE'))
+  .option('--line <line>', LINE_OPTION_TEXT)
   .option('-y, --auto-approve', lang.__('OPT_AUTO_APPROVE'))
   .option('--force', lang.__('OPT_FORCE'))
   .option('--no-marker', lang.__('OPT_NO_MARKER'))
@@ -363,16 +380,16 @@ program
 
 program
   .command('destroy')
-  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .option('-r, --region <region>', lang.__('OPT_REGION'))
   .option('--bind-unknown-region <region>', lang.__('OPT_BIND_UNKNOWN_REGION'))
-  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
   .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
   .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
   .option('--org <slug>', lang.__('OPT_ORG'))
-  .option('--line <line>', lang.__('OPT_LINE'))
+  .option('--line <line>', LINE_OPTION_TEXT)
   .description(lang.__('CMD_DESTROY_DESC'))
   .action(
     actionWrapper(
@@ -408,10 +425,10 @@ program
 program
   .command('local')
   .description(lang.__('CMD_LOCAL_DESC'))
-  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'), 'default')
   .option('-r, --region <region>', lang.__('OPT_REGION'))
-  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
   .option('-d, --debug', lang.__('OPT_DEBUG'))
   .option('-w, --watch', lang.__('OPT_WATCH'), true)
   .option('--strict-prefix', lang.__('OPT_STRICT_PREFIX'))
@@ -435,19 +452,20 @@ program
 program
   .command('force-unlock <lockId>')
   .description(lang.__('CMD_FORCE_UNLOCK_DESC'))
-  .option('-f, --file <path>', lang.__('OPT_FILE_REMOTE_REQUIRED'))
+  .option('-f, --file <path>', FILE_REMOTE_OPTION_TEXT)
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .option('-r, --region <region>', lang.__('OPT_REGION'))
-  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
   .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
   .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
+  .option('--line <line>', LINE_OPTION_TEXT)
   .action(
     actionWrapper(
       'force-unlock',
       async (
         lockId,
-        { file, stage, region, provider, accessKeyId, accessKeySecret, securityToken },
+        { file, stage, region, provider, accessKeyId, accessKeySecret, securityToken, line },
       ) => {
         await forceUnlockCommand(lockId, {
           location: file,
@@ -457,18 +475,25 @@ program
           accessKeyId,
           accessKeySecret,
           securityToken,
+          line,
         });
       },
     ),
   );
 
-// Issue #271: `si plan` was removed in favor of `si diff` — the legacy verb is
-// rejected with a localized migration hint before anything runs (no cloud or
-// state mutations). The check runs before commander parses argv so the hint
-// also wins over generic unknown-command handling, while every other unknown
-// verb keeps commander's default error, including did-you-mean suggestions.
-if (process.argv[2] === 'plan') {
-  program.error(`error: ${lang.__('CMD_PLAN_REMOVED')}`);
-}
+export const buildProgram = (): Command => program;
 
-program.parse();
+// Bin entrypoint: parse argv only when executed directly, so tests can import
+// buildProgram() and inspect help output without triggering a parse.
+if (require.main === module) {
+  const program = buildProgram();
+  // Issue #271: `si plan` was removed in favor of `si diff` — the legacy verb is
+  // rejected with a localized migration hint before anything runs (no cloud or
+  // state mutations). The check runs before commander parses argv so the hint
+  // also wins over generic unknown-command handling, while every other unknown
+  // verb keeps commander's default error, including did-you-mean suggestions.
+  if (process.argv[2] === 'plan') {
+    program.error(`error: ${lang.__('CMD_PLAN_REMOVED')}`);
+  }
+  program.parse();
+}

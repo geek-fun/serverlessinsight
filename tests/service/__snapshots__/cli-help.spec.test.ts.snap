@@ -1,0 +1,547 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`CLI help surfaces (issue #308)  help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) deploy help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) destroy help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) diff help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) force-unlock help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) local help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) login help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) logout help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) migrate help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) schema help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) show help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) validate help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;
+
+exports[`CLI help surfaces (issue #308) whoami help matches the snapshot 1`] = `
+"Usage: si [options] [command]
+
+CLI for ServerlessInsight
+
+Options:
+  -V, --version                    output the version number
+  -h, --help                       display help for command
+
+Commands:
+  login [options]                  authenticate with ServerlessInsight Console
+  logout                           revoke API key and clear local credentials
+  whoami                           show current login status
+  schema [options]                 export the IaC JSON Schema used for
+                                   validation (draft-07, self-contained)
+  show [options]                   show deployed resources from state
+  validate [options]               validate serverless Iac yaml
+  diff [options]                   show changes between your config and the live
+                                   cloud
+  deploy [options]                 deploy serverless Iac yaml
+  migrate [options]                Migrate a local/bucket state to the Console
+                                   (one-time; run AFTER upgrading every writer
+                                   CLI)
+  destroy [options]                destroy serverless stack
+  local [options]                  run Serverless application locally for
+                                   debugging (uses no state backend — no login
+                                   or cloud state involved)
+  force-unlock [options] <lockId>  manually remove a stuck lock (use with
+                                   caution)
+  help [command]                   display help for command
+
+Typical workflow:
+  si login                                        authenticate, then the profile is stored locally
+  si diff -f serverlessinsight.yml -s prod        preview changes before deploying
+  si deploy -f serverlessinsight.yml -s prod      deploy the stack
+  si show                                         inspect what is deployed
+  si destroy                                      tear the stack down
+
+SaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.
+"
+`;

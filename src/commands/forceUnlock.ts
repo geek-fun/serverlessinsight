@@ -6,6 +6,7 @@ import { createStateBackend } from '../common/stateBackend';
 import type { StateBackend } from '../common/stateBackend/types';
 import { StateBackendType } from '../types';
 import { bestEffortConsoleOrigin } from '../common/credentialStore';
+import { assertLineFlag, consoleOriginFor } from '../common/consoleLines';
 import { LOCK_FILE_SUFFIX } from '../common/constants';
 import { readLockFileForCommand, forceUnlock as fsForceUnlock } from '../common/lockManager';
 import { lang } from '../lang';
@@ -36,9 +37,13 @@ export const forceUnlockCommand = async (
     accessKeyId?: string;
     accessKeySecret?: string;
     securityToken?: string;
+    line?: string;
   } = {},
 ): Promise<void> => {
   let backend: Pick<StateBackend, 'readLock' | 'forceUnlock'>;
+  // Issue #308: an explicit --line pins the console URL in the SaaS refusal;
+  // without it the origin stays a best-effort guess from stored credentials.
+  const line = assertLineFlag(options.line);
 
   if (options.location) {
     const iacLocation = getIacLocation(options.location);
@@ -58,7 +63,7 @@ export const forceUnlockCommand = async (
     if (!iac.backend || iac.backend.type === StateBackendType.SAAS) {
       logger.info(
         lang.__('SAAS_FORCE_UNLOCK_NOT_SUPPORTED', {
-          consoleUrl: bestEffortConsoleOrigin(),
+          consoleUrl: (line && consoleOriginFor(line)) ?? bestEffortConsoleOrigin(),
         }),
       );
       return;
