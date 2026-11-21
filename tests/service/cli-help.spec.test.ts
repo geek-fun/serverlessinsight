@@ -81,7 +81,9 @@ const distAvailable = existsSync(CLI_PATH);
       }))
       .filter((entry) => entry.match !== null);
     expect(offenders).toEqual([]);
-  }, 60000);
+    // 13 parallel CLI spawns; on loaded runners (macOS maintenance daemons)
+    // individual spawns can take tens of seconds each — 60s was flaky.
+  }, 240000);
 
   it('documents the accepted provider values from the implemented set', async () => {
     const { stdout } = await runCliHelp(['deploy']);
