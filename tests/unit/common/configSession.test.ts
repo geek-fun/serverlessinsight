@@ -153,6 +153,57 @@ describe('config-set reference resolution (epic #53 P1)', () => {
     expect(() => assertNoRemainingSentinels([])).not.toThrow();
   });
 
+  it('plain (non-secret) refs concatenate without marking the field sensitive', () => {
+    const session = beginConfigSession();
+    const dsn = calcValue<string>(
+      'postgres://${config_sets.db.user}:${config_sets.db.host}/orders',
+      context,
+    );
+    session.resolved.set('db.user', {
+      value: 'app_user',
+      versionNumber: 2,
+      secret: false,
+      scope: 'service',
+      configSet: 'db',
+    });
+    session.resolved.set('db.host', {
+      value: 'db.prod.internal',
+      versionNumber: 2,
+      secret: false,
+      scope: 'service',
+      configSet: 'db',
+    });
+    const meta = applyConfigResolution({
+      functions: [{ key: 'fn', environment: { DSN: dsn } }],
+      databases: [],
+    });
+    expect(meta.functionEnvRefs.get('fn')?.get('DSN')?.secret).toBe(false);
+    expect(meta.secretValues.size).toBe(0);
+    endConfigSession();
+  });
+
+  it('org-scope refs resolve when app/service context is absent', () => {
+    const session = beginConfigSession();
+    const raw = calcValue<string>('${config_sets.shared.smtp}', context);
+    session.resolved.set('shared.smtp', {
+      value: 'smtp.example.com',
+      versionNumber: 4,
+      secret: false,
+      scope: 'org',
+      configSet: 'shared',
+    });
+    const meta = applyConfigResolution({
+      functions: [{ key: 'fn', environment: { SMTP: raw } }],
+      databases: [],
+    });
+    expect(meta.functionEnvRefs.get('fn')?.get('SMTP')).toEqual({
+      configRef: 'config_sets.shared.smtp',
+      versionNumber: 4,
+      secret: false,
+    });
+    endConfigSession();
+  });
+
   it('cfgref markers round-trip and carry provenance for drift masking', () => {
     const ref = { configRef: 'config_sets.db.password', versionNumber: 3, secret: true };
     const marker = configRefMarker(ref);

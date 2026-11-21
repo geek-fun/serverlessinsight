@@ -311,6 +311,27 @@ describe('si config command group (epic #53 P1)', () => {
     });
   });
 
+  describe('yamlScope option branches', () => {
+    it('handles a call without any optional options (undefined paths in setContext)', async () => {
+      mockClientObject.get.mockResolvedValueOnce([]);
+      await configList({ location: '/tmp/serverlessinsight.yml' });
+      const { setContext } = await import('../../../src/common/context');
+      // undefined option keys are simply absent from the spread — assert the
+      // resolved shape rather than literal undefined keys.
+      expect(setContext).toHaveBeenCalledWith(expect.not.objectContaining({ stage: 'prod' }));
+      expect(setContext).toHaveBeenCalledTimes(1);
+    });
+
+    it('forwards --org and --line flags into the SaaS client', async () => {
+      const { createConfigClient } = await import('../../../src/common/configClient');
+      mockClientObject.get.mockResolvedValueOnce([]);
+      await configList({ ...baseOptions, org: 'flag-org', line: 'china' });
+      expect(createConfigClient).toHaveBeenCalledWith(
+        expect.objectContaining({ org: 'flag-org', line: 'china', declaredOrg: 'my-org' }),
+      );
+    });
+  });
+
   describe('writeLocalConfigSnapshot', () => {
     it('writes the snapshot the runtime SDK reads in local mode', async () => {
       const fs = await import('node:fs');
