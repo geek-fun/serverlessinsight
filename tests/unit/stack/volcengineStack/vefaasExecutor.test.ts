@@ -195,6 +195,24 @@ describe('vefaasExecutor', () => {
       expect(deleteResource).not.toHaveBeenCalled();
     });
 
+    it('does not emit resource_pre for noop plan items', async () => {
+      const reportEvent = jest.fn();
+      const ctx = { ...mockContext, reportEvent };
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'noop',
+            resourceType: 'VOLCENGINE_VEFAAS',
+          },
+        ],
+      };
+
+      await executeFunctionPlan(ctx, plan, [mockFunction], mockState);
+
+      expect(reportEvent).not.toHaveBeenCalled();
+    });
+
     it('should return partial failure for missing function on create', async () => {
       const plan: Plan = {
         items: [
