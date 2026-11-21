@@ -109,6 +109,29 @@ describe('DatabaseExecutor', () => {
   });
 
   describe('executeDatabasePlan', () => {
+    it('reports the drift message on the resource_pre event for drifted items', async () => {
+      const reportEvent = jest.fn();
+      const ctx = { ...mockContext, reportEvent };
+      const database = createTestDatabase('db1');
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'databases.db1',
+            action: 'create',
+            resourceType: 'ALIYUN_RDS_SERVERLESS',
+            drifted: true,
+          },
+        ],
+      };
+
+      const result = await executeDatabasePlan(ctx, plan, [database], initialState);
+
+      expect(result.partialFailure).toBeUndefined();
+      expect(reportEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'resource_pre', message: 'RESOURCE_DRIFTED' }),
+      );
+    });
+
     it('should execute create action', async () => {
       const database = createTestDatabase('db1');
       const plan: Plan = {

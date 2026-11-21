@@ -112,6 +112,29 @@ describe('TablestoreExecutor', () => {
   });
 
   describe('executeTablePlan', () => {
+    it('reports the drift message on the resource_pre event for drifted items', async () => {
+      const reportEvent = jest.fn();
+      const ctx = { ...mockContext, reportEvent };
+      const table = createTestTable('table1');
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'tables.table1',
+            action: 'create',
+            resourceType: 'table',
+            drifted: true,
+          },
+        ],
+      };
+
+      const result = await executeTablePlan(ctx, plan, [table], initialState);
+
+      expect(result.partialFailure).toBeUndefined();
+      expect(reportEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'resource_pre', message: 'RESOURCE_DRIFTED' }),
+      );
+    });
+
     it('should handle noop action and return unchanged state', async () => {
       const table = createTestTable('table1');
       const plan: Plan = {

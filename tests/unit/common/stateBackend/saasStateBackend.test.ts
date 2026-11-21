@@ -1516,6 +1516,33 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       });
     });
 
+    it('reportEvent preserves an explicit consoleUrl instead of the active origin', async () => {
+      mockMutatingLoad();
+      mockApiClient.patch.mockImplementation(phaseAck);
+
+      const backend = await createBackend();
+      await backend.loadState();
+
+      const report = (backend as StateBackend & { reportEvent?: (e: unknown) => Promise<void> })
+        .reportEvent;
+      await report!({
+        type: 'resource_pre',
+        logicalId: 'functions.fn',
+        consoleUrl: 'https://other.test',
+      });
+
+      const flush = (backend as StateBackend & { flushEvents?: () => Promise<void> }).flushEvents;
+      if (flush) await flush();
+
+      const eventPatches = mockApiClient.patch.mock.calls.filter(
+        ([, body]) => (body as { phase?: string }).phase === 'event',
+      );
+      const sent = eventPatches.flatMap(
+        ([, body]) => (body as { events: Array<Record<string, unknown>> }).events,
+      );
+      expect(sent[0]).toMatchObject({ consoleUrl: 'https://other.test' });
+    });
+
     it('should replay orphaned event queues without throwing', async () => {
       const backend = await createBackend();
       await expect(backend.replayOrphanedEvents?.()).resolves.toBeUndefined();

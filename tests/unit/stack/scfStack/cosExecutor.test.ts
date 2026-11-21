@@ -66,6 +66,41 @@ describe('cosExecutor', () => {
   });
 
   describe('executeBucketPlan', () => {
+    it('reports the drift message on the resource_pre event for drifted items', async () => {
+      const reportEvent = jest.fn();
+      const ctx = { ...mockContext, reportEvent };
+      const newState: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed' as ResourceMode,
+            region: 'ap-guangzhou',
+            definition: { bucket: 'test-bucket' },
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+      (cosResource.createBucketResource as jest.Mock).mockResolvedValue(newState);
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'buckets.test_bucket',
+            action: 'create',
+            resourceType: 'COS_BUCKET',
+            drifted: true,
+          },
+        ],
+      };
+
+      const result = await executeBucketPlan(ctx, plan, [testBucket], initialState);
+
+      expect(result.partialFailure).toBeUndefined();
+      expect(reportEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'resource_pre', message: 'RESOURCE_DRIFTED' }),
+      );
+    });
+
     it('should handle empty plan', async () => {
       const plan: Plan = { items: [] };
       const result = await executeBucketPlan(mockContext, plan, [testBucket], initialState);

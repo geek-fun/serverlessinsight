@@ -509,4 +509,171 @@ describe('EventQueue uncovered paths', () => {
     const [file] = fs.readdirSync(queueDir);
     expect(fs.readFileSync(path.join(queueDir, file!), 'utf8')).toBe('{"unfinished":');
   });
+
+  it('resolves an immediate flush when nothing is pending', async () => {
+    const queue = new EventQueue({
+      deploymentId: 'dep-empty-flush',
+      queueDir,
+      sendBatch: mockSendBatch,
+      batchSize: 10,
+    });
+    await expect(queue.flush()).resolves.toBeUndefined();
+    expect(mockSendBatch).not.toHaveBeenCalled();
+  });
+
+  it('warns with the raw rejection when the sender throws a non-error', async () => {
+    mockSendBatch.mockRejectedValue('boom');
+    const queue = new EventQueue({
+      deploymentId: 'dep-nonerror',
+      queueDir,
+      sendBatch: mockSendBatch,
+      batchSize: 10,
+    });
+    queue.report({ type: 'bad' });
+
+    await queue.flush();
+
+    const mockedLogger = jest.requireMock('../../../src/common/logger') as {
+      logger: { warn: jest.Mock };
+    };
+    expect(mockedLogger.logger.warn).toHaveBeenCalledWith('EVENT_FLUSH_FAILED');
+    expect(queue.pendingCount).toBe(1);
+  });
+
+  it('retries throttled and timeout responses as transient failures', async () => {
+    const throttled = Object.assign(new Error('slow down'), { status: 429 });
+    mockSendBatch.mockRejectedValueOnce(throttled).mockResolvedValueOnce(undefined);
+    const queue = new EventQueue({
+      deploymentId: 'dep-429',
+      queueDir,
+      sendBatch: mockSendBatch,
+      batchSize: 10,
+      baseRetryMs: 25,
+      maxRetries: 2,
+    });
+    queue.report({ type: 'throttled' });
+
+    await queue.flush();
+
+    expect(mockSendBatch).toHaveBeenCalledTimes(2);
+    expect(queue.pendingCount).toBe(0);
+  });
+
+  it('tolerates a spooled file that vanished before the send confirmed', async () => {
+    mockSendBatch.mockResolvedValue(undefined);
+    const queue = new EventQueue({
+      deploymentId: 'dep-vanish',
+      queueDir,
+      sendBatch: mockSendBatch,
+      batchSize: 10,
+    });
+    queue.report({ type: 'vanish' });
+    fs.rmSync(writerFile('dep-vanish'), { force: true });
+
+    await expect(queue.flush()).resolves.toBeUndefined();
+
+    expect(mockSendBatch).toHaveBeenCalledTimes(1);
+    expect(queue.pendingCount).toBe(0);
+  });
+
+  it('stops replaying once the budget is exhausted', async () => {
+    fs.mkdirSync(queueDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(queueDir, 'a.jsonl'),
+      `${JSON.stringify({ type: 'x', sequence: 1, consoleUrl: 'https://console.test' })}\n`,
+    );
+    const queue = new EventQueue({
+      deploymentId: 'dep-budget',
+      queueDir,
+      sendBatch: mockSendBatch,
+      replayBudgetMs: 0,
+      replayConsoleUrl: 'https://console.test',
+    });
+
+    await queue.replayOrphanedQueues();
+
+    expect(mockSendBatch).not.toHaveBeenCalled();
+    expect(fs.readdirSync(queueDir).length).toBeGreaterThan(0);
+  });
+
+  it('ignores non-jsonl entries in the queue directory', async () => {
+    fs.mkdirSync(queueDir, { recursive: true });
+    fs.writeFileSync(path.join(queueDir, 'notes.txt'), 'scratch');
+    const queue = new EventQueue({
+      deploymentId: 'dep-txt',
+      queueDir,
+      sendBatch: mockSendBatch,
+      replayConsoleUrl: 'https://console.test',
+    });
+
+    await queue.replayOrphanedQueues();
+
+    expect(mockSendBatch).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(queueDir, 'notes.txt'))).toBe(true);
+  });
+
+  it('warns about preserved legacy queue files outside the v2 directory', async () => {
+    fs.mkdirSync(queueDir, { recursive: true });
+    const legacyFile = path.join(tmpDir, 'legacy-old.jsonl');
+    const legacyClaim = path.join(tmpDir, 'legacy-old.jsonl.replaying');
+    fs.writeFileSync(legacyFile, `${JSON.stringify({ type: 'x' })}\n`);
+    fs.writeFileSync(legacyClaim, `${JSON.stringify({ type: 'x' })}\n`);
+    const queue = new EventQueue({
+      deploymentId: 'dep-legacy',
+      queueDir,
+      sendBatch: mockSendBatch,
+      replayConsoleUrl: 'https://console.test',
+    });
+    const mockedLogger = jest.requireMock('../../../src/common/logger') as {
+      logger: { warn: jest.Mock };
+    };
+    try {
+      await queue.replayOrphanedQueues();
+
+      expect(mockedLogger.logger.warn).toHaveBeenCalledWith('EVENT_LEGACY_QUEUE_PRESERVED');
+    } finally {
+      fs.rmSync(legacyFile, { force: true });
+      fs.rmSync(legacyClaim, { force: true });
+    }
+  });
+
+  it('warns with the raw rejection when a replay send throws a non-error', async () => {
+    fs.mkdirSync(queueDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(queueDir, 'plain.jsonl'),
+      `${JSON.stringify({ type: 'x', sequence: 1, consoleUrl: 'https://console.test' })}\n`,
+    );
+    mockSendBatch.mockRejectedValue('plain failure');
+    const queue = new EventQueue({
+      deploymentId: 'dep-plain',
+      queueDir,
+      sendBatch: mockSendBatch,
+      maxRetries: 1,
+      replayConsoleUrl: 'https://console.test',
+    });
+    const mockedLogger = jest.requireMock('../../../src/common/logger') as {
+      logger: { warn: jest.Mock };
+    };
+
+    await queue.replayOrphanedQueues();
+
+    expect(mockedLogger.logger.warn).toHaveBeenCalledWith('EVENT_REPLAY_FAILED');
+  });
+
+  it('skips the heartbeat when nothing is pending', async () => {
+    jest.useFakeTimers();
+    const queue = new EventQueue({
+      deploymentId: 'dep-idle',
+      queueDir,
+      sendBatch: mockSendBatch,
+      batchSize: 10,
+      flushIntervalMs: 100,
+    });
+
+    await jest.advanceTimersByTimeAsync(100);
+
+    expect(mockSendBatch).not.toHaveBeenCalled();
+    expect(queue.pendingCount).toBe(0);
+    jest.useRealTimers();
+  });
 });

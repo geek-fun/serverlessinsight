@@ -1,5 +1,6 @@
 import { executeDatabasePlan } from '../../../../src/stack/scfStack/tdsqlcExecutor';
 import * as tdsqlcResource from '../../../../src/stack/scfStack/tdsqlcResource';
+import { lang } from '../../../../src/lang';
 import * as stateManager from '../../../../src/common/stateManager';
 import {
   Context,
@@ -80,6 +81,44 @@ describe('TdsqlcExecutor', () => {
   });
 
   describe('executeDatabasePlan', () => {
+    it('reports the drift message on the resource_pre event for drifted items', async () => {
+      const reportEvent = jest.fn();
+      const ctx = { ...mockContext, reportEvent };
+      const updatedState: StateFile = {
+        ...mockState,
+        resources: {
+          'databases.test_db': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { clusterName: 'test-tdsqlc' },
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+      jest.spyOn(tdsqlcResource, 'createDatabaseResource').mockResolvedValue(updatedState);
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'databases.test_db',
+            action: 'create',
+            resourceType: 'TDSQL_C_SERVERLESS',
+            drifted: true,
+          },
+        ],
+      };
+
+      const result = await executeDatabasePlan(ctx, plan, [mockDatabase], mockState);
+
+      expect(result.partialFailure).toBeUndefined();
+      expect(reportEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'resource_pre',
+          message: lang.__('RESOURCE_DRIFTED'),
+        }),
+      );
+    });
+
     it('should execute create action', async () => {
       const plan: Plan = {
         items: [
