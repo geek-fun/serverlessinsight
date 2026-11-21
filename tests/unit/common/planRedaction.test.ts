@@ -1,4 +1,4 @@
-import { redactAttributeDiffs } from '../../../src/common/planRedaction';
+import { redactAttributeDiffs, redactPlanItems } from '../../../src/common/planRedaction';
 import { formatPlanItem } from '../../../src/common/planFormatter';
 import { buildPlanChange } from '../../../src/common/jsonOutput';
 import type { PlanItem } from '../../../src/types';
@@ -49,5 +49,124 @@ describe('plan credential redaction', () => {
         ],
       },
     ]);
+  });
+});
+
+describe('config-ref provenance in plan diffs (epic #53 P1)', () => {
+  it('shows ref@vBefore → vAfter for changed secret-ref environment entries', () => {
+    const diffs = [
+      {
+        key: 'environment',
+        action: 'change' as const,
+        before: { DB_PASSWORD: 'cfgref:config_sets.db.password@v3' },
+        after: { DB_PASSWORD: 'cfgref:config_sets.db.password@v5' },
+        children: [
+          {
+            key: 'DB_PASSWORD',
+            action: 'change' as const,
+            before: 'cfgref:config_sets.db.password@v3',
+            after: 'cfgref:config_sets.db.password@v5',
+          },
+        ],
+      },
+    ];
+    const redacted = redactAttributeDiffs(diffs)[0]!;
+    // Top-level before/after keep the bare markers (they feed the drift mask
+    // substitution); provenance shows on the child diff entries.
+    expect(redacted.before).toEqual({ DB_PASSWORD: 'cfgref:config_sets.db.password@v3' });
+    expect(redacted.after).toEqual({ DB_PASSWORD: 'cfgref:config_sets.db.password@v5' });
+    expect(redacted.children![0]!.before).toBe('*** (config_sets.db.password@v3)');
+    expect(redacted.children![0]!.after).toBe('*** (config_sets.db.password@v3 → v5)');
+  });
+
+  it('maps a live session secret value to its cfgref provenance in plan diffs', async () => {
+    const { beginConfigSession, applyConfigResolution, endConfigSession } =
+      await import('../../../src/common/configSession');
+    const session = beginConfigSession();
+    session.placeholderOf('db.password');
+    session.resolved.set('db.password', {
+      value: 'sup3r-s3cret',
+      versionNumber: 7,
+      secret: true,
+      scope: 'stage',
+      configSet: 'db',
+    });
+    applyConfigResolution({
+      functions: [{ key: 'fn', environment: { PW: '⟦si-cfg:0⟧' } }],
+      databases: [],
+    });
+
+    const diffs = [
+      {
+        key: 'environment',
+        action: 'change' as const,
+        before: { PW: 'cfgref:config_sets.db.password@v3' },
+        after: { PW: 'sup3r-s3cret' },
+        children: [
+          {
+            key: 'PW',
+            action: 'change' as const,
+            before: 'cfgref:config_sets.db.password@v3',
+            after: 'sup3r-s3cret',
+          },
+        ],
+      },
+    ];
+    const redacted = redactAttributeDiffs(diffs)[0]!;
+    expect(redacted.after).toEqual({ PW: 'cfgref:config_sets.db.password@v7' });
+    expect(redacted.children![0]!.after).toBe('*** (config_sets.db.password@v3 → v7)');
+    endConfigSession();
+  });
+
+  it('redactPlanItems masks sensitive environment values in state updates', async () => {
+    // Self-contained session — this test must not depend on execution order.
+    const { beginConfigSession, applyConfigResolution, endConfigSession } =
+      await import('../../../src/common/configSession');
+    const session = beginConfigSession();
+    session.placeholderOf('db.password');
+    session.resolved.set('db.password', {
+      value: 'sup3r-s3cret',
+      versionNumber: 7,
+      secret: true,
+      scope: 'stage',
+      configSet: 'db',
+    });
+    applyConfigResolution({
+      functions: [{ key: 'fn', environment: { PW: '⟦si-cfg:0⟧' } }],
+      databases: [],
+    });
+    const items = [
+      {
+        logicalId: 'functions.fn',
+        resourceType: 'ALIYUN_FC3_FUNCTION',
+        action: 'update' as const,
+        stateUpdate: {
+          environment: { DB_PASSWORD: 'sup3r-s3cret', PLAIN: 'visible' },
+        },
+      },
+    ];
+    const [redacted] = redactPlanItems(items as unknown as PlanItem[]);
+    // Session secrets become cfgref markers; state never carries plaintexts.
+    expect(redacted.stateUpdate).toEqual({
+      environment: { DB_PASSWORD: 'cfgref:config_sets.db.password@v7', PLAIN: 'visible' },
+    });
+    endConfigSession();
+  });
+
+  it('falls back to the generic mask for non-marker sensitive values', () => {
+    const diffs = [
+      {
+        key: 'environment',
+        action: 'change' as const,
+        before: { API_KEY: 'plain-old' },
+        after: { API_KEY: 'plain-new' },
+        children: [
+          { key: 'API_KEY', action: 'change' as const, before: 'plain-old', after: 'plain-new' },
+        ],
+      },
+    ];
+    const redacted = redactAttributeDiffs(diffs)[0]!;
+    // lang is real here — PLAN_SENSITIVE_VALUE translates to '(sensitive)'.
+    expect(redacted.children![0]!.after).toBe('(sensitive)');
   });
 });

@@ -164,6 +164,37 @@ describe('config-set ref markers (epic #53 P1)', () => {
     endConfigSession();
   });
 
+  it('plan paths map a session secret against its previous marker to show version movement', async () => {
+    const { beginConfigSession, applyConfigResolution, endConfigSession } =
+      await import('../../../src/common/configSession');
+    const session = beginConfigSession();
+    session.placeholderOf('db.password');
+    session.resolved.set('db.password', {
+      value: 'sup3r-s3cret',
+      versionNumber: 5,
+      secret: true,
+      scope: 'stage',
+      configSet: 'db',
+    });
+    applyConfigResolution({
+      functions: [{ key: 'fn', environment: { PW: '⟦si-cfg:0⟧' } }],
+      databases: [],
+    });
+
+    // Plan path (`before` present): the freshly resolved secret against the
+    // previous real value produces the v3 → v5 provenance line.
+    const { redactEnvironmentAttributes } = await import('../../../src/common/envRedaction');
+    const redacted = redactEnvironmentAttributes(
+      { environment: { PW: 'sup3r-s3cret' } },
+      { environment: { PW: 'cfgref:config_sets.db.password@v3' } },
+    );
+    expect(redacted.environment?.PW).toBe('*** (config_sets.db.password@v3 → v5)');
+    // The state path (no `before`) keeps the bare marker for drift substitution.
+    const statePath = redactEnvironmentAttributes({ environment: { PW: 'sup3r-s3cret' } });
+    expect(statePath.environment?.PW).toBe('cfgref:config_sets.db.password@v5');
+    endConfigSession();
+  });
+
   it('plan display shows ref@vBefore → vAfter provenance for changed markers', async () => {
     const { redactEnvironmentAttributes } = await import('../../../src/common/envRedaction');
     const redacted = redactEnvironmentAttributes(
