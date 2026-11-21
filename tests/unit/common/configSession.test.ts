@@ -131,20 +131,25 @@ describe('config-set reference resolution (epic #53 P1)', () => {
     const session = beginConfigSession();
     session.placeholderOf('db.missing');
     // resolved deliberately empty — the ref was registered but never resolved
+    // lang is real in this file — assert the translated message body.
     expect(() =>
       applyConfigResolution({
         functions: [{ key: 'fn', environment: { A: '⟦si-cfg:0⟧' } }],
         databases: [],
       }),
-    ).toThrow(/CONFIG_ITEM_NOT_FOUND/);
+    ).toThrow(/Config references failed to resolve/);
     endConfigSession();
   });
 
   it('assertNoRemainingSentinels throws listing leftovers and passes clean trees', () => {
     expect(() => assertNoRemainingSentinels(['⟦si-cfg:0⟧', 'clean', '⟦si-cfg:2⟧'])).toThrow(
-      /CONFIG_ITEM_NOT_FOUND/,
+      /Config references failed to resolve/,
     );
-    expect(() => assertNoRemainingSentinels(['clean', 42])).not.toThrow();
+    // Non-string entries are ignored by the filter — the cast mirrors the
+    // loose Iterable<any> data this guard meets in practice.
+    expect(() =>
+      assertNoRemainingSentinels(['clean', 42] as unknown as Iterable<string>),
+    ).not.toThrow();
     expect(() => assertNoRemainingSentinels([])).not.toThrow();
   });
 
