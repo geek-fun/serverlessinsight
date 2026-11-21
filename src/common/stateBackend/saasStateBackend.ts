@@ -89,6 +89,8 @@ type MigrateTargetsResponse = {
 
 type ServerCapabilities = {
   regionalScope: boolean;
+  /** Server supports self-describing event timestamps (v2 batches). */
+  deploymentEventsProtocol?: number;
 };
 
 export const createSaasStateBackend = async (
@@ -157,7 +159,12 @@ export const createSaasStateBackend = async (
     }
     try {
       const caps = await client.get<Partial<ServerCapabilities>>('/api/v1/capabilities');
-      probedCapabilities = { regionalScope: supportsRegionalSaas(caps) };
+      probedCapabilities = {
+        regionalScope: supportsRegionalSaas(caps),
+        ...(typeof caps.deploymentEventsProtocol === 'number'
+          ? { deploymentEventsProtocol: caps.deploymentEventsProtocol }
+          : {}),
+      };
     } catch (error) {
       if (error instanceof ApiError && (error.status === 404 || error.status === 405)) {
         probedCapabilities = { regionalScope: false };
@@ -177,6 +184,8 @@ export const createSaasStateBackend = async (
       ...event,
       deploymentId: currentDeploymentId,
       sequence: event.sequence ?? sequenceCounter,
+      ...(event.occurredAt === undefined ? { occurredAt: new Date().toISOString() } : {}),
+      ...(event.consoleUrl === undefined ? { consoleUrl } : {}),
     });
   };
 
@@ -185,15 +194,34 @@ export const createSaasStateBackend = async (
     eventQueue = new EventQueue({
       deploymentId: currentDeploymentId,
       queueDir: options?.eventQueueDir,
-      sendBatch: async (events) => {
-        await client.patch(`/api/v1/deployments/${currentDeploymentId}`, {
-          phase: 'event',
-          events,
-          ...(resolvedAppId ? { appId: resolvedAppId } : {}),
-        });
+      sendBatch: async (events, requestOptions) => {
+        await client.patch(
+          `/api/v1/deployments/${currentDeploymentId}`,
+          {
+            phase: 'event',
+            events,
+            // v2 marks self-describing batches; a strict pre-v2 API rejects the
+            // unknown top-level field instead of silently dropping occurredAt.
+            ...((await eventProtocolVersion()) >= 2 ? { deploymentEventsProtocol: 2 } : {}),
+            ...(resolvedAppId ? { appId: resolvedAppId } : {}),
+          },
+          { signal: requestOptions?.signal },
+        );
       },
       flushOnExit: true,
+      replayConsoleUrl: consoleUrl,
     });
+  };
+
+  // Probe failure or an unparseable response conservatively means v1: the
+  // batch is still delivered, minus self-describing timestamps.
+  const eventProtocolVersion = async (): Promise<number> => {
+    try {
+      const caps = await probeCapabilities();
+      return caps?.deploymentEventsProtocol ?? 0;
+    } catch {
+      return 0;
+    }
   };
 
   // Cached identity belongs to the effective key. Resolve an override or an
@@ -623,10 +651,6 @@ export const createSaasStateBackend = async (
       running = true;
       onLockAcquired?.(currentDeploymentId);
       ensureEventQueue();
-      reportEvent({
-        type: 'deployment_started',
-        message: lang.__('SAAS_BACKEND_DEPLOYMENT_STARTED'),
-      });
 
       try {
         const result = await fn();
@@ -639,6 +663,9 @@ export const createSaasStateBackend = async (
           typeof result === 'object' &&
           result !== null &&
           ('stateJson' in summary || 'plan' in summary);
+        // The terminal PATCH commits first; queued resource events flush on
+        // exit afterwards. Late batches only add resource detail — the console
+        // anchors the terminal milestone on deployment.status, not on events.
         const completed = await retryRequest(() =>
           client.patch(`/api/v1/deployments/${currentDeploymentId}`, {
             phase: 'complete',
@@ -665,10 +692,6 @@ export const createSaasStateBackend = async (
           }),
         );
         assertDeploymentAck(completed, 'completed');
-        reportEvent({
-          type: 'deployment_completed',
-          message: lang.__('SAAS_BACKEND_DEPLOYMENT_COMPLETE'),
-        });
         await eventQueue?.flushOnExit();
         return result;
       } catch (err) {
@@ -709,14 +732,6 @@ export const createSaasStateBackend = async (
         } catch {
           // Best-effort fail notification
         }
-        reportEvent({
-          type: 'deployment_failed',
-          message: lang.__('SAAS_BACKEND_DEPLOYMENT_FAILED', {
-            error: err instanceof Error ? err.message : String(err),
-          }),
-          error: { message: err instanceof Error ? err.message : String(err) },
-          severity: 'error',
-        });
         await eventQueue?.flushOnExit();
         throw err;
       } finally {
@@ -734,14 +749,20 @@ export const createSaasStateBackend = async (
       const replayQueue = new EventQueue({
         deploymentId: 'replay',
         queueDir: options?.eventQueueDir,
-        sendBatch: async (events) => {
+        sendBatch: async (events, requestOptions) => {
           const deploymentId = events[0]?.deploymentId as string | undefined;
           if (!deploymentId) return;
-          await client.patch(`/api/v1/deployments/${deploymentId}`, {
-            phase: 'event',
-            events,
-          });
+          await client.patch(
+            `/api/v1/deployments/${deploymentId}`,
+            {
+              phase: 'event',
+              events,
+              ...((await eventProtocolVersion()) >= 2 ? { deploymentEventsProtocol: 2 } : {}),
+            },
+            { signal: requestOptions?.signal },
+          );
         },
+        replayConsoleUrl: consoleUrl,
       });
       await replayQueue.replayOrphanedQueues();
     },

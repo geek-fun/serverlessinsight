@@ -116,7 +116,7 @@ export const executeFunctionPlan = async (
       logicalId: item.logicalId,
       resourceType: item.resourceType,
       action: item.action,
-      ...(item.drifted ? { message: 'resource drifted' } : {}),
+      ...(item.drifted ? { message: lang.__('RESOURCE_DRIFTED') } : {}),
     });
     const startedAt = Date.now();
     try {
@@ -125,15 +125,16 @@ export const executeFunctionPlan = async (
       if (newState !== null) {
         currentState = newState;
         successfulItems.push(item);
+        if (onStateChange) {
+          await onStateChange(currentState);
+        }
+        // State persistence is part of completing the operation; the
+        // completion event only lands once the state did.
         reportResourceEvent(context, {
           type: 'resource_complete',
           logicalId: item.logicalId,
           durationMs: Date.now() - startedAt,
         });
-
-        if (onStateChange) {
-          await onStateChange(currentState);
-        }
       }
     } catch (error) {
       reportResourceEvent(context, {
