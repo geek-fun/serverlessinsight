@@ -177,3 +177,47 @@ describe('config-set ref markers (epic #53 P1)', () => {
     expect(fresh.environment?.PW).toBe('cfgref:config_sets.db.password@v7');
   });
 });
+
+describe('redactPayloadDeep (epic #53 P1 — event stream never carries secrets)', () => {
+  it('scrubs secret values anywhere in an arbitrary payload, preserving structure', async () => {
+    const { beginConfigSession, applyConfigResolution, endConfigSession } =
+      await import('../../../src/common/configSession');
+    const session = beginConfigSession();
+    // calcValue would normally register this sentinel during evaluation.
+    session.placeholderOf('db.password');
+    session.resolved.set('db.password', {
+      value: 'sup3r-s3cret',
+      versionNumber: 5,
+      secret: true,
+      scope: 'stage',
+      configSet: 'db',
+    });
+    applyConfigResolution({
+      functions: [{ key: 'fn', environment: { PW: '⟦si-cfg:0⟧' } }],
+      databases: [],
+    });
+
+    // redactPayloadDeep matches the EXACT values resolved this run — the same
+    // contract the state/spec boundaries use.
+    const payload = {
+      message: 'sup3r-s3cret',
+      nested: { details: ['a', 'sup3r-s3cret', { deep: 'sup3r-s3cret' }] },
+      untouched: 'ordinary',
+    };
+    const { redactPayloadDeep } = await import('../../../src/common/envRedaction');
+    expect(redactPayloadDeep(payload)).toEqual({
+      message: '[REDACTED]',
+      nested: { details: ['a', '[REDACTED]', { deep: '[REDACTED]' }] },
+      untouched: 'ordinary',
+    });
+    endConfigSession();
+  });
+
+  it('passes payloads through untouched when no session secrets exist', async () => {
+    const { redactPayloadDeep } = await import('../../../src/common/envRedaction');
+    const { setAppliedConfigMeta } = await import('../../../src/common/configSession');
+    setAppliedConfigMeta(null);
+    const payload = { message: 'plain', list: [1, 2] };
+    expect(redactPayloadDeep(payload)).toStrictEqual(payload);
+  });
+});
