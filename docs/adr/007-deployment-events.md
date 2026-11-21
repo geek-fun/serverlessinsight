@@ -62,20 +62,22 @@ PATCH carries the same top-level marker; every event in it must have a valid
 `occurredAt` and a `sequence`. The marker is what protects the timestamp: a
 pre-v2 API has a strict request schema and rejects the unknown top-level field
 instead of accepting the batch and silently dropping `occurredAt`. The CLI
-probes capabilities and falls back to v1 (no marker, timestamps stripped by the
-old server) only when the probe fails or does not declare v2. Batches already
-written to disk keep their original shape until a compatible API is available.
+chooses a protocol from the capabilities found for the deployment and records
+that version with the event. New v1 events omit the marker on the wire. A
+recorded v2 batch retains its marker and timestamps on replay, including while
+the API is rolled back.
 
 ### Delivery
 
 Every batch insert is one transaction. After the terminal PATCH commits, the
 CLI flushes the remaining queue — never before the terminal PATCH, because late
 batches only add resource detail while the Console anchors the end state on
-`deployment.status`. Exit flush and startup replay run under a time budget that
-cancels in-flight requests through an `AbortSignal` passed down to
-`fetch`. A batch the server rejects with a 4xx (except 408/429) is a permanent
+`deployment.status`. The command's final flush joins any in-flight send.
+The final flush and startup replay each have a deadline that cancels requests
+and retry delays. A batch the server rejects with a 4xx (except 408/429) is a permanent
 rejection: it leaves the pending queue for the rest of the run and its records
 stay in the JSONL file for inspection. Queue files live under
-`event-queue/v2`, are atomically claimed by rename for replay, record the
-Console origin per event, and files without a matching origin are preserved for
-explicit recovery.
+`event-queue/v2` and record the Console origin per event. The filenames identify
+active writers and replay workers. Replay claims retired files by rename and can
+reclaim a snapshot after its worker exits. Files without a matching origin are
+preserved for explicit recovery.
