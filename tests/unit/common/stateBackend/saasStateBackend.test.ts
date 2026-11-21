@@ -1238,7 +1238,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         const backend = await createSaasStateBackend({ scope }, { eventQueueDir: spool });
         await backend.loadState();
         backend.reportEvent!({ type: 'diagnostic', message: 'test event' });
-        const file = path.join(spool, 'deploy-1.jsonl');
+        const file = path.join(spool, fs.readdirSync(spool)[0]!);
         expect(fs.existsSync(file)).toBe(true);
         expect(JSON.parse(fs.readFileSync(file, 'utf8'))).not.toHaveProperty('queueDir');
         await backend.flushEvents!();
@@ -1564,9 +1564,45 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
           expect.objectContaining({ signal: expect.anything() }),
         );
         expect(fs.existsSync(path.join(queueDir, 'deploy-old.jsonl'))).toBe(false);
-        expect(fs.existsSync(path.join(queueDir, 'anonymous.jsonl'))).toBe(true);
+        const [retained] = fs.readdirSync(queueDir);
+        expect(JSON.parse(fs.readFileSync(path.join(queueDir, retained!), 'utf8'))).toMatchObject({
+          sequence: 4,
+        });
       } finally {
         fs.rmSync(queueDir, { recursive: true, force: true });
+      }
+    });
+
+    it('keeps a v2 queue file after rollback and replays it with the original protocol', async () => {
+      const spool = fs.mkdtempSync(path.join(os.tmpdir(), 'si-saas-v2-replay-'));
+      const event = {
+        type: 'resource_pre',
+        deploymentId: 'deploy-42',
+        sequence: 1,
+        occurredAt: '2026-01-01T00:00:00.000Z',
+        deploymentEventsProtocol: 2,
+        consoleUrl: 'https://api.test.com',
+      };
+      fs.writeFileSync(path.join(spool, 'deploy-42.jsonl'), `${JSON.stringify(event)}\n`);
+      mockApiClient.patch.mockRejectedValueOnce(new ApiError('unsupported marker', 400));
+      try {
+        const backend = await createSaasStateBackend({ scope }, { eventQueueDir: spool });
+        await backend.replayOrphanedEvents!();
+        const [file] = fs.readdirSync(spool);
+        expect(JSON.parse(fs.readFileSync(path.join(spool, file!), 'utf8'))).toEqual(event);
+        mockApiClient.patch.mockResolvedValueOnce(undefined);
+        await backend.replayOrphanedEvents!();
+        expect(mockApiClient.get).not.toHaveBeenCalled();
+        for (const [, request] of mockApiClient.patch.mock.calls) {
+          expect(request).toMatchObject({
+            deploymentEventsProtocol: 2,
+            events: [{ sequence: 1, occurredAt: event.occurredAt }],
+          });
+          expect(request.events[0]).not.toHaveProperty('deploymentEventsProtocol');
+        }
+        expect(fs.readdirSync(spool)).toEqual([]);
+      } finally {
+        fs.rmSync(spool, { recursive: true, force: true });
       }
     });
 

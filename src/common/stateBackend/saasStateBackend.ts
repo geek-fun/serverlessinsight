@@ -93,6 +93,20 @@ type ServerCapabilities = {
   deploymentEventsProtocol?: number;
 };
 
+const eventBatchPayload = (events: DeploymentEventRecord[]) => ({
+  phase: 'event',
+  events: events.map(({ deploymentEventsProtocol: _protocol, ...event }) => event),
+  // Older spool files did not record the delivery version. Preserve any
+  // timestamp they already carry by requiring v2 when replaying them.
+  ...(events.some(
+    (event) =>
+      event.deploymentEventsProtocol === 2 ||
+      (event.deploymentEventsProtocol === undefined && event.occurredAt !== undefined),
+  )
+    ? { deploymentEventsProtocol: 2 }
+    : {}),
+});
+
 export const createSaasStateBackend = async (
   context: SaasBackendContext,
   options?: SaasBackendOptions,
@@ -184,6 +198,7 @@ export const createSaasStateBackend = async (
       ...event,
       deploymentId: currentDeploymentId,
       sequence: event.sequence ?? sequenceCounter,
+      deploymentEventsProtocol: (probedCapabilities?.deploymentEventsProtocol ?? 0) >= 2 ? 2 : 1,
       ...(event.occurredAt === undefined ? { occurredAt: new Date().toISOString() } : {}),
       ...(event.consoleUrl === undefined ? { consoleUrl } : {}),
     });
@@ -198,30 +213,14 @@ export const createSaasStateBackend = async (
         await client.patch(
           `/api/v1/deployments/${currentDeploymentId}`,
           {
-            phase: 'event',
-            events,
-            // v2 marks self-describing batches; a strict pre-v2 API rejects the
-            // unknown top-level field instead of silently dropping occurredAt.
-            ...((await eventProtocolVersion()) >= 2 ? { deploymentEventsProtocol: 2 } : {}),
+            ...eventBatchPayload(events),
             ...(resolvedAppId ? { appId: resolvedAppId } : {}),
           },
           { signal: requestOptions?.signal },
         );
       },
-      flushOnExit: true,
       replayConsoleUrl: consoleUrl,
     });
-  };
-
-  // Probe failure or an unparseable response conservatively means v1: the
-  // batch is still delivered, minus self-describing timestamps.
-  const eventProtocolVersion = async (): Promise<number> => {
-    try {
-      const caps = await probeCapabilities();
-      return caps?.deploymentEventsProtocol ?? 0;
-    } catch {
-      return 0;
-    }
   };
 
   // Cached identity belongs to the effective key. Resolve an override or an
@@ -752,15 +751,9 @@ export const createSaasStateBackend = async (
         sendBatch: async (events, requestOptions) => {
           const deploymentId = events[0]?.deploymentId as string | undefined;
           if (!deploymentId) return;
-          await client.patch(
-            `/api/v1/deployments/${deploymentId}`,
-            {
-              phase: 'event',
-              events,
-              ...((await eventProtocolVersion()) >= 2 ? { deploymentEventsProtocol: 2 } : {}),
-            },
-            { signal: requestOptions?.signal },
-          );
+          await client.patch(`/api/v1/deployments/${deploymentId}`, eventBatchPayload(events), {
+            signal: requestOptions?.signal,
+          });
         },
         replayConsoleUrl: consoleUrl,
       });
