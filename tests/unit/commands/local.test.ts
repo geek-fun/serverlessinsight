@@ -23,6 +23,7 @@ const mockedCollectConfigRefs = jest.fn((): string[] => []);
 const mockedBeginConfigSession = jest.fn();
 const mockedApplyConfigResolution = jest.fn();
 const mockedEndConfigSession = jest.fn();
+const mockedSetAppliedConfigMeta = jest.fn();
 const mockedResolveConfigRefsViaSaas = jest.fn();
 const mockedWriteLocalConfigSnapshot = jest.fn();
 
@@ -31,10 +32,11 @@ jest.mock('../../../src/common/configSession', () => ({
   beginConfigSession: () => mockedBeginConfigSession(),
   applyConfigResolution: () => mockedApplyConfigResolution(),
   endConfigSession: () => mockedEndConfigSession(),
+  setAppliedConfigMeta: (...args: unknown[]) => mockedSetAppliedConfigMeta(...args),
 }));
 
 jest.mock('../../../src/common/configClient', () => ({
-  resolveConfigRefsViaSaas: (refs: string[], options: { stage: string; declaredOrg?: string }) =>
+  resolveConfigRefsViaSaas: (refs: string[], options: Record<string, unknown>) =>
     mockedResolveConfigRefsViaSaas(refs, options),
 }));
 
@@ -171,11 +173,26 @@ describe('si local config-set resolution (epic #53 P1/P2)', () => {
       '/tmp/app/.serverlessinsight/local-config.json',
     );
 
-    await runLocal({ stage: 'prod', debug: false, watch: false, location: '/tmp/app' });
+    await runLocal({
+      stage: 'prod',
+      debug: false,
+      watch: false,
+      location: '/tmp/app',
+      siApiKey: 'si_cn_key',
+      org: 'override-org',
+      line: 'china',
+    });
 
     expect(mockedResolveConfigRefsViaSaas).toHaveBeenCalledWith(['db.host'], {
       stage: 'prod',
+      app: 'local-app',
+      service: 'local-service',
+      provider: ProviderEnum.ALIYUN,
+      region: 'cn-hangzhou',
+      siApiKey: 'si_cn_key',
       declaredOrg: 'my-org',
+      org: 'override-org',
+      line: 'china',
     });
     expect(mockedWriteLocalConfigSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -184,6 +201,8 @@ describe('si local config-set resolution (epic #53 P1/P2)', () => {
         entries: [expect.objectContaining({ key: 'db.host', value: 'localhost', secret: false })],
       }),
     );
+    expect(mockedEndConfigSession).toHaveBeenCalled();
+    expect(mockedSetAppliedConfigMeta).toHaveBeenCalledWith(null);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining('Local config snapshot written'),
     );

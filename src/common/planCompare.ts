@@ -1,5 +1,5 @@
 import { attributesEqual } from './hashUtils';
-import { isRedactedEnvValue, readEnvironment } from './envRedaction';
+import { isRedactedEnvValue, readEnvironment, RUNTIME_TOKEN_PRESERVE } from './envRedaction';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -85,25 +85,63 @@ export const managedDefinition = (
       .map(([key, value]) => [key, projectValue(actual[key], value, key)]),
   );
 
+/**
+ * Align `RUNTIME_TOKEN_PRESERVE` entries in `desired.environment` with any
+ * non-empty string present in `actual.environment` (live `sirt_` token or
+ * stored `[REDACTED]`). When `actual` lacks the key, the sentinel stays so
+ * drift/create detects the missing runtime token without rotating live keys.
+ */
+export const alignRuntimeTokenDesired = <T extends Record<string, unknown>>(
+  actual: Record<string, unknown>,
+  desired: T,
+): T => {
+  const desiredEnv = readEnvironment(desired.environment);
+  const actualEnv = readEnvironment(actual.environment);
+  if (!desiredEnv || !actualEnv) return desired;
+  let changed = false;
+  const aligned = Object.fromEntries(
+    Object.entries(desiredEnv).map(([key, value]) => {
+      if (
+        value === RUNTIME_TOKEN_PRESERVE &&
+        typeof actualEnv[key] === 'string' &&
+        actualEnv[key].length > 0
+      ) {
+        changed = true;
+        return [key, actualEnv[key]];
+      }
+      return [key, value];
+    }),
+  );
+  return changed ? { ...desired, environment: aligned } : desired;
+};
+
 export const definitionsDiffer = (
   actual: Record<string, unknown>,
   desired: Record<string, unknown>,
-): boolean => !attributesEqual(managedDefinition(actual, desired), managedDefinition(desired));
+): boolean => {
+  const alignedDesired = alignRuntimeTokenDesired(actual, desired);
+  return !attributesEqual(
+    managedDefinition(actual, alignedDesired),
+    managedDefinition(alignedDesired),
+  );
+};
 
 /** Only mapper-emitted fields are readable. Explicit null means known absence. */
 export const remoteDiffersFromDesired = (
   remote: Record<string, unknown>,
   desired: Record<string, unknown>,
-): boolean =>
-  Object.keys(remote).some(
+): boolean => {
+  const alignedDesired = alignRuntimeTokenDesired(remote, desired);
+  return Object.keys(remote).some(
     (key) =>
       remote[key] !== undefined &&
-      isDeclared(desired[key]) &&
+      isDeclared(alignedDesired[key]) &&
       !attributesEqual(
-        { value: projectValue(remote[key], desired[key], key) },
-        { value: projectValue(desired[key], desired[key], key) },
+        { value: projectValue(remote[key], alignedDesired[key], key) },
+        { value: projectValue(alignedDesired[key], alignedDesired[key], key) },
       ),
   );
+};
 
 export const remoteDiffersFromStored = (
   remote: Record<string, unknown>,
@@ -175,11 +213,12 @@ export const computeRevertKeys = (
   live: Record<string, unknown>,
   desired: Record<string, unknown>,
 ): string[] => {
-  const saved = managedDefinition(stored, desired);
-  const current = managedDefinition(live, desired);
-  const target = managedDefinition(desired);
+  const alignedDesired = alignRuntimeTokenDesired(live, desired);
+  const saved = managedDefinition(stored, alignRuntimeTokenDesired(stored, desired));
+  const current = managedDefinition(live, alignedDesired);
+  const target = managedDefinition(alignedDesired);
   return Object.keys(live)
-    .filter((key) => live[key] !== undefined && isDeclared(desired[key]))
+    .filter((key) => live[key] !== undefined && isDeclared(alignedDesired[key]))
     .flatMap((key) => revertPaths(saved[key], current[key], target[key], key))
     .sort((a, b) => a.localeCompare(b));
 };

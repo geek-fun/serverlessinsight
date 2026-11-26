@@ -46,7 +46,6 @@ import {
   createConfigClient,
   resolveConfigRefsViaSaas,
   resolveTargetIds,
-  issueRuntimeConfigToken,
 } from '../../../src/common/configClient';
 
 const mockResolveLineContext = resolveLineContext as jest.Mock;
@@ -125,7 +124,11 @@ describe('configClient (epic #53 P1/P2 SaaS surface)', () => {
   });
 
   describe('resolveConfigRefsViaSaas', () => {
-    it('maps resolved items into the session value shape', async () => {
+    it('resolves appId/serviceId when deployment scope is given and maps resolved items', async () => {
+      mockClient.get.mockResolvedValueOnce({
+        app: { name: 'demo-app', exists: true, id: 'app-1' },
+        service: { name: 'demo-svc', exists: true, id: 'svc-1' },
+      });
       mockClient.post.mockResolvedValueOnce({
         items: [
           {
@@ -146,11 +149,20 @@ describe('configClient (epic #53 P1/P2 SaaS surface)', () => {
 
       const resolved = await resolveConfigRefsViaSaas(['db.host', 'db.password'], {
         stage: 'prod',
+        app: 'demo-app',
+        service: 'demo-svc',
+        provider: 'aliyun',
+        region: 'cn-hangzhou',
         siApiKey: 'si_com_abc_secret',
       });
+      expect(mockClient.get).toHaveBeenCalledWith(
+        '/api/v1/state/migrate/targets?app_name=demo-app&service_name=demo-svc&stages=prod&region=cn-hangzhou&provider=aliyun',
+      );
       expect(mockClient.post).toHaveBeenCalledWith('/api/v1/config-sets/resolve', {
         refs: ['db.host', 'db.password'],
         stage: 'prod',
+        appId: 'app-1',
+        serviceId: 'svc-1',
       });
       expect(resolved.get('db.host')).toEqual({
         value: 'db.prod.internal',
@@ -160,6 +172,33 @@ describe('configClient (epic #53 P1/P2 SaaS surface)', () => {
         configSet: 'db',
       });
       expect(resolved.get('db.password')?.secret).toBe(true);
+    });
+
+    it('omits appId/serviceId when targets do not exist yet or scope is omitted', async () => {
+      mockClient.get.mockResolvedValueOnce({
+        app: { name: 'new-app', exists: false, id: null },
+        service: { name: 'new-svc', exists: false, id: null },
+      });
+      mockClient.post.mockResolvedValueOnce({ items: [], missing: [] });
+
+      await resolveConfigRefsViaSaas(['shared.smtp'], {
+        stage: 'prod',
+        app: 'new-app',
+        service: 'new-svc',
+        provider: 'aliyun',
+        region: 'cn-hangzhou',
+      });
+      expect(mockClient.post).toHaveBeenCalledWith('/api/v1/config-sets/resolve', {
+        refs: ['shared.smtp'],
+        stage: 'prod',
+      });
+
+      mockClient.post.mockResolvedValueOnce({ items: [], missing: [] });
+      await resolveConfigRefsViaSaas(['shared.smtp'], { stage: 'prod' });
+      expect(mockClient.post).toHaveBeenLastCalledWith('/api/v1/config-sets/resolve', {
+        refs: ['shared.smtp'],
+        stage: 'prod',
+      });
     });
 
     it('fails closed listing every missing ref when the resolve reports any', async () => {
@@ -174,30 +213,6 @@ describe('configClient (epic #53 P1/P2 SaaS surface)', () => {
       await expect(
         resolveConfigRefsViaSaas(['nope.host', 'db.absent'], { stage: 'prod' }),
       ).rejects.toThrow(/CONFIG_ITEM_NOT_FOUND/);
-    });
-  });
-
-  describe('issueRuntimeConfigToken', () => {
-    it('mints the runtime key and returns the token with the console URL', async () => {
-      mockClient.post.mockResolvedValueOnce({ fullKey: 'sirt_com_abc_secret', rotated: false });
-      const result = await issueRuntimeConfigToken(
-        { siApiKey: 'si_com_abc_secret' },
-        { stage: 'prod' },
-      );
-      expect(mockClient.post).toHaveBeenCalledWith('/api/v1/runtime-keys', { stage: 'prod' });
-      expect(result).toEqual({
-        token: 'sirt_com_abc_secret',
-        consoleUrl: 'https://console.example.test',
-      });
-    });
-
-    it('forwards the service binding when given', async () => {
-      mockClient.post.mockResolvedValueOnce({ fullKey: 'sirt_com_x', rotated: true });
-      await issueRuntimeConfigToken({}, { serviceId: 'svc-1', stage: 'prod' });
-      expect(mockClient.post).toHaveBeenCalledWith('/api/v1/runtime-keys', {
-        serviceId: 'svc-1',
-        stage: 'prod',
-      });
     });
   });
 });

@@ -45,7 +45,6 @@ jest.mock('../../../src/common/configClient', () => ({
   })),
   resolveTargetIds: jest.fn(async () => ({ appId: 'app-1', serviceId: 'svc-1' })),
   resolveConfigRefsViaSaas: jest.fn(async () => new Map()),
-  issueRuntimeConfigToken: jest.fn(),
 }));
 
 const mockReadlineAnswers: string[] = [];
@@ -97,9 +96,21 @@ const baseOptions = {
 };
 
 describe('si config command group (epic #53 P1)', () => {
+  const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+  let stderrWriteSpy: jest.SpyInstance;
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockReadlineAnswers.length = 0;
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    stderrWriteSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    stderrWriteSpy.mockRestore();
+    if (originalIsTTY) {
+      Object.defineProperty(process.stdin, 'isTTY', originalIsTTY);
+    }
   });
 
   describe('configList', () => {
@@ -154,16 +165,46 @@ describe('si config command group (epic #53 P1)', () => {
       expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('CONFIG_SET_CREATED'));
     });
 
-    it('merges into the latest version when the set already exists (server-side, no plaintexts)', async () => {
+    it('merges into the matching scope/stage set and forwards description', async () => {
       mockReadlineAnswers.push('db.prod.internal');
-      mockClientObject.get.mockResolvedValueOnce([{ id: 'cs-1', name: 'db', scope: 'service' }]);
-      mockClientObject.put.mockResolvedValueOnce({ id: 'cs-1' });
-      await configSet('db.host', baseOptions);
+      mockClientObject.get.mockResolvedValueOnce([
+        { id: 'cs-org', name: 'db', scope: 'org', stage: null },
+        { id: 'cs-dev', name: 'db', scope: 'stage', serviceId: 'svc-1', stage: 'dev' },
+        { id: 'cs-prod', name: 'db', scope: 'stage', serviceId: 'svc-1', stage: 'prod' },
+      ]);
+      mockClientObject.put.mockResolvedValueOnce({ id: 'cs-prod' });
+      await configSet('db.host', { ...baseOptions, stage: 'prod', description: 'prod DB host' });
       expect(mockClientObject.put).toHaveBeenCalledWith(
-        '/api/v1/config-sets/cs-1',
+        '/api/v1/config-sets/cs-prod',
         expect.objectContaining({
-          items: [{ key: 'host', value: 'db.prod.internal', type: 'string' }],
+          items: [
+            {
+              key: 'host',
+              value: 'db.prod.internal',
+              type: 'string',
+              description: 'prod DB host',
+            },
+          ],
           mergeWithLatest: true,
+        }),
+      );
+    });
+
+    it('creates a stage-scoped set instead of hijacking an existing service-scoped set of the same name', async () => {
+      mockReadlineAnswers.push('prod-secret');
+      mockClientObject.get.mockResolvedValueOnce([
+        { id: 'cs-svc', name: 'db', scope: 'service', serviceId: 'svc-1', stage: null },
+      ]);
+      mockClientObject.post.mockResolvedValueOnce({ id: 'cs-prod', name: 'db' });
+      await configSet('db.password', { ...baseOptions, stage: 'prod', type: 'secret' });
+      expect(mockClientObject.put).not.toHaveBeenCalled();
+      expect(mockClientObject.post).toHaveBeenCalledWith(
+        '/api/v1/config-sets',
+        expect.objectContaining({
+          name: 'db',
+          scope: 'stage',
+          stage: 'prod',
+          serviceId: 'svc-1',
         }),
       );
     });
@@ -189,18 +230,28 @@ describe('si config command group (epic #53 P1)', () => {
       }
     });
 
-    it('rejects malformed refs and empty values', async () => {
+    it('rejects malformed refs, invalid types, invalid scopes, and non-TTY prompts', async () => {
       await expect(configSet('noref', baseOptions)).rejects.toThrow(/CONFIG_SET_REF_INVALID/);
       await expect(configSet('a.b.c', baseOptions)).rejects.toThrow(/CONFIG_SET_REF_INVALID/);
+      await expect(configSet('db.host', { ...baseOptions, type: 'bogus' })).rejects.toThrow(
+        /CONFIG_SET_INVALID_TYPE/,
+      );
+      await expect(configSet('db.host', { ...baseOptions, scope: 'global' })).rejects.toThrow(
+        /CONFIG_SET_INVALID_SCOPE/,
+      );
+      Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+      await expect(configSet('db.host', baseOptions)).rejects.toThrow(/CONFIG_SET_STDIN_NOT_TTY/);
     });
   });
 
   describe('configVersions', () => {
     it('prints version rows with tags', async () => {
       mockClientObject.get
-        .mockResolvedValueOnce([{ id: 'cs-1', name: 'db' }])
+        .mockResolvedValueOnce([
+          { id: 'cs-1', name: 'db', scope: 'stage', serviceId: 'svc-1', stage: 'prod' },
+        ])
         .mockResolvedValueOnce({
-          configSet: { id: 'cs-1', name: 'db', scope: 'service', stage: null, updatedAt: '' },
+          configSet: { id: 'cs-1', name: 'db', scope: 'stage', stage: 'prod', updatedAt: '' },
           versions: [
             {
               versionNumber: 2,
@@ -215,6 +266,16 @@ describe('si config command group (epic #53 P1)', () => {
       expect(logger.info).toHaveBeenCalledTimes(2);
     });
 
+    it('fails with CONFIG_SET_AMBIGUOUS when multiple sets match without --stage or --scope', async () => {
+      mockClientObject.get.mockResolvedValueOnce([
+        { id: 'cs-dev', name: 'db', scope: 'stage', serviceId: 'svc-1', stage: 'dev' },
+        { id: 'cs-prod', name: 'db', scope: 'stage', serviceId: 'svc-1', stage: 'prod' },
+      ]);
+      await expect(
+        configVersions('db', { location: baseOptions.location, siApiKey: baseOptions.siApiKey }),
+      ).rejects.toThrow(/CONFIG_SET_AMBIGUOUS/);
+    });
+
     it('fails when the set does not exist', async () => {
       mockClientObject.get.mockResolvedValueOnce([]);
       await expect(configVersions('nope', baseOptions)).rejects.toThrow(/CONFIG_SET_NOT_FOUND/);
@@ -224,9 +285,11 @@ describe('si config command group (epic #53 P1)', () => {
   describe('configRelease', () => {
     it('moves the latest tag to the requested version (rollback = lower version)', async () => {
       mockClientObject.get
-        .mockResolvedValueOnce([{ id: 'cs-1', name: 'db' }])
+        .mockResolvedValueOnce([
+          { id: 'cs-1', name: 'db', scope: 'stage', serviceId: 'svc-1', stage: 'prod' },
+        ])
         .mockResolvedValueOnce({
-          configSet: { id: 'cs-1', name: 'db', scope: 'service', stage: null, updatedAt: '' },
+          configSet: { id: 'cs-1', name: 'db', scope: 'stage', stage: 'prod', updatedAt: '' },
           versions: [
             { versionNumber: 2, tags: ['latest'], items: [] },
             { versionNumber: 1, tags: [], items: [] },
@@ -240,11 +303,23 @@ describe('si config command group (epic #53 P1)', () => {
       expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('CONFIG_RELEASED'));
     });
 
+    it('rejects non-positive or NaN versions before making API calls', async () => {
+      await expect(configRelease('db', { ...baseOptions, version: Number.NaN })).rejects.toThrow(
+        /CONFIG_VERSION_INVALID/,
+      );
+      await expect(configRelease('db', { ...baseOptions, version: 0 })).rejects.toThrow(
+        /CONFIG_VERSION_INVALID/,
+      );
+      expect(mockClientObject.get).not.toHaveBeenCalled();
+    });
+
     it('warns without --version when already latest', async () => {
       mockClientObject.get
-        .mockResolvedValueOnce([{ id: 'cs-1', name: 'db' }])
+        .mockResolvedValueOnce([
+          { id: 'cs-1', name: 'db', scope: 'stage', serviceId: 'svc-1', stage: 'prod' },
+        ])
         .mockResolvedValueOnce({
-          configSet: { id: 'cs-1', name: 'db', scope: 'service', stage: null, updatedAt: '' },
+          configSet: { id: 'cs-1', name: 'db', scope: 'stage', stage: 'prod', updatedAt: '' },
           versions: [{ versionNumber: 2, tags: ['latest'], items: [] }],
         });
       await configRelease('db', baseOptions);
@@ -256,10 +331,19 @@ describe('si config command group (epic #53 P1)', () => {
   });
 
   describe('configTag', () => {
-    it('attaches a named tag to a version', async () => {
-      mockClientObject.get.mockResolvedValueOnce([{ id: 'cs-1', name: 'db' }]);
-      await configTag('db', { ...baseOptions, version: 2, tag: 'production' });
-      expect(mockClientObject.post).toHaveBeenCalledWith('/api/v1/config-sets/cs-1/tag', {
+    it('attaches a named tag to a version scoped by --scope', async () => {
+      mockClientObject.get.mockResolvedValueOnce([
+        { id: 'cs-org', name: 'db', scope: 'org', stage: null },
+        { id: 'cs-svc', name: 'db', scope: 'service', serviceId: 'svc-1', stage: null },
+      ]);
+      await configTag('db', {
+        location: baseOptions.location,
+        siApiKey: baseOptions.siApiKey,
+        scope: 'org',
+        version: 2,
+        tag: 'production',
+      });
+      expect(mockClientObject.post).toHaveBeenCalledWith('/api/v1/config-sets/cs-org/tag', {
         versionNumber: 2,
         tag: 'production',
       });
@@ -267,11 +351,14 @@ describe('si config command group (epic #53 P1)', () => {
   });
 
   describe('configDelete', () => {
-    it('removes the key through a server-side merge (items stay unread)', async () => {
-      mockClientObject.get.mockResolvedValueOnce([{ id: 'cs-1', name: 'db' }]);
-      await configDelete('db.host', baseOptions);
+    it('removes the key through a server-side merge targeting the exact stage set', async () => {
+      mockClientObject.get.mockResolvedValueOnce([
+        { id: 'cs-dev', name: 'db', scope: 'stage', serviceId: 'svc-1', stage: 'dev' },
+        { id: 'cs-prod', name: 'db', scope: 'stage', serviceId: 'svc-1', stage: 'prod' },
+      ]);
+      await configDelete('db.host', { ...baseOptions, stage: 'prod' });
       expect(mockClientObject.put).toHaveBeenCalledWith(
-        '/api/v1/config-sets/cs-1',
+        '/api/v1/config-sets/cs-prod',
         expect.objectContaining({ items: [], mergeWithLatest: true, removeKeys: ['host'] }),
       );
     });
@@ -292,11 +379,14 @@ describe('si config command group (epic #53 P1)', () => {
       await expect(configSet('db.host', baseOptions)).rejects.toThrow(/CONFIG_SET_NO_SERVICE/);
     });
 
-    it('promptHiddenValue echoes nothing and flushes a newline on completion', async () => {
+    it('promptHiddenValue displays prompt to stderr before suppressing echoed characters', async () => {
       mockReadlineAnswers.push('typed-secret');
-      mockClientObject.get.mockResolvedValueOnce([{ id: 'cs-1', name: 'db' }]);
+      mockClientObject.get.mockResolvedValueOnce([
+        { id: 'cs-1', name: 'db', scope: 'stage', serviceId: 'svc-1', stage: 'prod' },
+      ]);
       mockClientObject.put.mockResolvedValueOnce({ id: 'cs-1' });
       await configSet('db.host', baseOptions);
+      expect(stderrWriteSpy).toHaveBeenCalledWith('CONFIG_SET_VALUE_PROMPT');
       const { createInterface } = await import('node:readline');
       const stub = (createInterface as jest.Mock).mock.results.at(-1)!.value;
       // The suppression hook must forward only line terminations.
@@ -306,8 +396,9 @@ describe('si config command group (epic #53 P1)', () => {
       expect(stub.output.write).toHaveBeenCalledWith('\n');
     });
 
-    it('configDelete rejects malformed refs', async () => {
+    it('configDelete rejects malformed and dotted refs consistently with configSet', async () => {
       await expect(configDelete('noref', baseOptions)).rejects.toThrow(/CONFIG_SET_REF_INVALID/);
+      await expect(configDelete('a.b.c', baseOptions)).rejects.toThrow(/CONFIG_SET_REF_INVALID/);
     });
   });
 
@@ -353,6 +444,9 @@ describe('si config command group (epic #53 P1)', () => {
       };
       expect(content.snapshotVersion).toBe(5);
       expect(content.entries[0]!.key).toBe('db.host');
+      if (process.platform !== 'win32') {
+        expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+      }
       fs.rmSync(tmpDir, { recursive: true, force: true });
     });
   });

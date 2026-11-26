@@ -1503,6 +1503,7 @@ export const zhCN = {
   HELP_ROOT_EXAMPLES:
     '典型工作流：\n  si login                                        登录 Console，profile 保存在本地\n  si diff -f serverlessinsight.yml -s prod        部署前预览变更\n  si deploy -f serverlessinsight.yml -s prod      部署资源栈\n  si show                                         查看已部署内容\n  si destroy                                      销毁资源栈\n\nSaaS state 命令需要 Console 凭据：先执行一次 si login，或在命令支持时显式传入 --si-api-key。执行 si <command> --help 查看完整选项。',
   // ── si config(epic #53 P1)──
+  CMD_CONFIG_DESC: '管理 SI SaaS 中的配置集与密钥',
   CMD_CONFIG_LIST_DESC: '列出 yaml 应用的配置集',
   CMD_CONFIG_SET_DESC: '创建或更新配置项(值来自隐藏输入或 --stdin;不支持 --value)',
   CMD_CONFIG_VERSIONS_DESC: '列出配置集的版本',
@@ -1510,11 +1511,20 @@ export const zhCN = {
   CMD_CONFIG_TAG_DESC: '给版本附加命名标签',
   CMD_CONFIG_DELETE_DESC: '从最新版本移除配置项',
   OPT_CONFIG_TYPE: '条目类型:string | number | boolean | json | yaml | text | secret',
+  OPT_CONFIG_SCOPE: '目标配置集作用域:org | app | service | stage',
+  OPT_CONFIG_DESCRIPTION: '配置项的可选描述',
   OPT_CONFIG_STDIN: '从 stdin 读取值而不是隐藏输入',
   OPT_CONFIG_VERSION: '目标版本号',
   OPT_CONFIG_TAG: '要附加的标签名',
   CONFIG_SET_VALUE_PROMPT: '值(隐藏输入):',
+  CONFIG_SET_STDIN_NOT_TTY: '当前终端不支持隐藏交互输入——请传 --stdin 通过管道输入值',
   CONFIG_SET_REF_INVALID: '配置引用 "{{ref}}" 必须是 <名称>.<键>',
+  CONFIG_SET_INVALID_TYPE:
+    '无效的配置项类型 "{{type}}"——支持:string、number、boolean、json、yaml、text、secret',
+  CONFIG_SET_INVALID_SCOPE: '无效的配置作用域 "{{scope}}"——支持:org、app、service、stage',
+  CONFIG_VERSION_INVALID: '无效的版本号 "{{version}}"——需要正整数',
+  CONFIG_SET_AMBIGUOUS:
+    '存在多个名为 "{{name}}" 的配置集({{matches}})——请传 --stage 或 --scope 明确目标',
   CONFIG_SET_VALUE_EMPTY: '配置值为空——未写入',
   CONFIG_SET_NO_SERVICE: '配置集需要服务上下文:SI SaaS 中未找到应用 "{{app}}" / 服务 "{{service}}"',
   CONFIG_SET_NOT_FOUND: '配置集 "{{name}}" 不存在',
@@ -1537,7 +1547,6 @@ export const zhCN = {
   CONFIG_REF_APPLIED: '配置引用已应用于 {{field}}:{{ref}}@v{{version}}',
   CONFIG_RUNTIME_KEY_ISSUED: '运行时配置 key 已签发(rotated={{rotated}})',
   CONFIG_RUNTIME_TOKEN_INJECTED: '已将 SI_CONFIG_TOKEN / SI_CONSOLE_URL 注入函数环境变量',
-  CONFIG_RUNTIME_KEY_NOT_READY: '运行时 key 签发需要部署身份——请对 SaaS 后端执行 deploy',
   CONFIG_LOCAL_RESOLVE_FAILED: '本地运行的配置引用未解析:{{reason}}——快照文件未写入',
   CONFIG_LOCAL_SNAPSHOT_WRITTEN: '本地配置快照已写入 {{file}}({{count}} 条)',
   OPT_AUTO_APPROVE: '跳过部署前的计划交互确认',

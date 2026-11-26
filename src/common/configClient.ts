@@ -1,8 +1,8 @@
 import { resolveLineContext } from './lineContext';
 import { createApiClient, validateApiKey, type ApiClient } from './apiClient';
 import { assertValidatedOrg, assertValidatedRegion } from './consoleLines';
+import { normalizeScope } from './stateScope';
 import { lang } from '../lang';
-import { logger } from './logger';
 import type { ResolvedConfigValue } from './configSession';
 
 type ResolvedValueScope = ResolvedConfigValue['scope'];
@@ -79,13 +79,19 @@ export const resolveTargetIds = async (
 };
 
 /**
- * Batch resolve refs for one deploy (issue #53 P1). Fails closed listing every
+ * Batch resolve refs for one deploy/diff/local run (issue #53 P1). Resolves
+ * appId/serviceId when deployment scope is given so org-scoped API keys walk
+ * the full stage → service → app → org cascade. Fails closed listing every
  * missing or unauthorized ref together with the scopes that were searched.
  */
 export const resolveConfigRefsViaSaas = async (
   refs: string[],
   options: {
     stage: string;
+    app?: string;
+    service?: string;
+    provider?: string;
+    region?: string;
     siApiKey?: string;
     declaredOrg?: string;
     org?: string;
@@ -99,9 +105,30 @@ export const resolveConfigRefsViaSaas = async (
     line: options.line,
     operation: 'config resolution',
   });
+  let targetIds: { appId: string | null; serviceId: string | null } = {
+    appId: null,
+    serviceId: null,
+  };
+  if (options.app && options.service && options.provider && options.region) {
+    targetIds = await resolveTargetIds(
+      configClient,
+      normalizeScope({
+        app: options.app,
+        service: options.service,
+        stage: options.stage,
+        provider: options.provider,
+        region: options.region,
+      }),
+    );
+  }
   const response = await configClient.client.post<ConfigResolveResponse>(
     '/api/v1/config-sets/resolve',
-    { refs, stage: options.stage },
+    {
+      refs,
+      stage: options.stage,
+      ...(targetIds.appId ? { appId: targetIds.appId } : {}),
+      ...(targetIds.serviceId ? { serviceId: targetIds.serviceId } : {}),
+    },
   );
   const resolved = new Map<string, ResolvedConfigValue>();
   for (const item of response.items ?? []) {
@@ -120,32 +147,4 @@ export const resolveConfigRefsViaSaas = async (
     );
   }
   return resolved;
-};
-
-/**
- * Mint/rotate the runtime key for the deploy's service+stage (epic #53 P2) —
- * returned once, injected as SI_CONFIG_TOKEN into the function environment.
- */
-export const issueRuntimeConfigToken = async (
-  options: {
-    siApiKey?: string;
-    declaredOrg?: string;
-    org?: string;
-    line?: string;
-  },
-  binding: { serviceId?: string; stage?: string },
-): Promise<{ token: string; consoleUrl: string }> => {
-  const configClient = await createConfigClient({
-    siApiKey: options.siApiKey,
-    declaredOrg: options.declaredOrg,
-    org: options.org,
-    line: options.line,
-    operation: 'runtime key issuance',
-  });
-  const response = await configClient.client.post<{ fullKey: string; rotated: boolean }>(
-    '/api/v1/runtime-keys',
-    binding,
-  );
-  logger.debug(lang.__('CONFIG_RUNTIME_KEY_ISSUED', { rotated: String(response.rotated) }));
-  return { token: response.fullKey, consoleUrl: configClient.consoleUrl };
 };

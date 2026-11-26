@@ -13,18 +13,24 @@ const SECRET_ENV_KEY =
 const CREDENTIAL_URL = /^[a-z][a-z0-9+.-]*:\/\/[^/?#\s]+@/i;
 const LEGACY_FINGERPRINT = /^fpr:[0-9a-f]{16}$/;
 export const REDACTED_ENV_VALUE = '[REDACTED]';
+export const RUNTIME_TOKEN_PRESERVE = '⟦si-runtime-token⟧';
 const REDACTED_CHANGED = '[REDACTED: updated]';
 
 const isLegacyFingerprint = (value: unknown): boolean =>
   typeof value === 'string' && LEGACY_FINGERPRINT.test(value);
 
 export const isRedactedEnvValue = (value: unknown): boolean =>
-  value === REDACTED_ENV_VALUE || isLegacyFingerprint(value) || isConfigRefMarker(value);
+  value === REDACTED_ENV_VALUE ||
+  value === RUNTIME_TOKEN_PRESERVE ||
+  isLegacyFingerprint(value) ||
+  isConfigRefMarker(value);
 
 export const isSensitiveEnvEntry = (key: string, value: unknown): boolean =>
   SECRET_ENV_KEY.test(key) ||
+  value === RUNTIME_TOKEN_PRESERVE ||
   isLegacyFingerprint(value) ||
   isConfigRefMarker(value) ||
+  sessionMarkerFor(value) !== null ||
   (typeof value === 'string' && CREDENTIAL_URL.test(value.trim()));
 
 /**
@@ -104,6 +110,9 @@ export const redactEnvironmentAttributes = <T extends ResourceAttributes>(
       return [key, previous ? (provenance ?? value) : value] as const;
     }
     if (!isSensitiveEnvEntry(key, value)) return [key, value] as const;
+    if (value === RUNTIME_TOKEN_PRESERVE) {
+      return [key, REDACTED_ENV_VALUE] as const;
+    }
     const changed = previous && Object.hasOwn(previous, key) && previous[key] !== value;
     return [key, changed ? REDACTED_CHANGED : REDACTED_ENV_VALUE] as const;
   });
@@ -112,15 +121,23 @@ export const redactEnvironmentAttributes = <T extends ResourceAttributes>(
 };
 
 /** Deep redaction for arbitrary payloads (deployment events, error details):
- * any string matching a secret value resolved this run becomes [REDACTED]
- * (issue #53 P1 — the event stream never carries plaintext secrets). */
+ * scrubs both exact and substring occurrences of every secret value resolved
+ * or minted this run (issue #53 P1/P2 — event stream never carries secrets). */
 export const redactPayloadDeep = <T>(payload: T): T => {
   const meta = getAppliedConfigMeta();
   if (!meta || meta.secretValues.size === 0) return payload;
+  const secrets = [...meta.secretValues]
+    .filter((secret) => secret.length > 0)
+    .sort((a, b) => b.length - a.length);
+  if (secrets.length === 0) return payload;
+  const scrubString = (input: string): string =>
+    secrets.reduce(
+      (current, secret) =>
+        current.includes(secret) ? current.split(secret).join(REDACTED_ENV_VALUE) : current,
+      input,
+    );
   const walk = (value: unknown): unknown => {
-    if (typeof value === 'string') {
-      return meta.secretValues.has(value) ? REDACTED_ENV_VALUE : value;
-    }
+    if (typeof value === 'string') return scrubString(value);
     if (Array.isArray(value)) return value.map(walk);
     if (value && typeof value === 'object') {
       return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, walk(v)]));

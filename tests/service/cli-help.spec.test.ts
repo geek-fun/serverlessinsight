@@ -52,8 +52,6 @@ const HELP_SURFACES: ReadonlyArray<readonly string[]> = [
   ['force-unlock'],
 ];
 
-const helpLabel = (args: readonly string[]): string => (args.length ? args[0] : 'root');
-
 const distAvailable = existsSync(CLI_PATH);
 
 (distAvailable ? describe : describe.skip)('CLI help surfaces (issue #308)', () => {
@@ -69,20 +67,31 @@ const distAvailable = existsSync(CLI_PATH);
     30000,
   );
 
-  it('never renders a raw i18n key as help text', async () => {
-    const outputs = await Promise.all(HELP_SURFACES.map((args) => runCliHelp([...args])));
-    // The PR #307 defect class: an option description that IS the raw key.
-    // Env var names like SI_API_KEY inside prose must not match.
-    const rawKeyDescription = /^\s+--\S+\s+[A-Z]{2,}_[A-Z0-9_]{2,}\s*$/m;
+  it('never renders a raw i18n key or uninterpolated placeholder in help text', async () => {
+    const surfaces: ReadonlyArray<readonly string[]> = [
+      ...HELP_SURFACES,
+      ['config'],
+      ['config', 'list'],
+      ['config', 'set'],
+      ['config', 'versions'],
+      ['config', 'release'],
+      ['config', 'tag'],
+      ['config', 'delete'],
+    ];
+    const outputs = await Promise.all(surfaces.map((args) => runCliHelp([...args])));
+    // Catch raw i18n keys on both option rows (`--opt OPT_FOO`) and command
+    // rows (`config CMD_CONFIG_DESC`), plus uninterpolated `{{var}}` tokens.
+    const rawKeyDescription =
+      /^\s+(?:--\S+|[a-z][a-z0-9-]*(?:\s+\[[^\]]+\])?)\s+[A-Z]{2,}_[A-Z0-9_]{2,}\s*$/m;
+    const uninterpolatedToken = /\{\{[a-zA-Z0-9_]+\}\}/;
     const offenders = outputs
       .map((result, index) => ({
-        surface: helpLabel(HELP_SURFACES[index]),
-        match: result.stdout.match(rawKeyDescription),
+        surface: surfaces[index].filter(Boolean).join(' ') || 'root',
+        rawKey: result.stdout.match(rawKeyDescription)?.[0] ?? null,
+        placeholder: result.stdout.match(uninterpolatedToken)?.[0] ?? null,
       }))
-      .filter((entry) => entry.match !== null);
+      .filter((entry) => entry.rawKey !== null || entry.placeholder !== null);
     expect(offenders).toEqual([]);
-    // 13 parallel CLI spawns; on loaded runners (macOS maintenance daemons)
-    // individual spawns can take tens of seconds each — 60s was flaky.
   }, 240000);
 
   it('documents the accepted provider values from the implemented set', async () => {

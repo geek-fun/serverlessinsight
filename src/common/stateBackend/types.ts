@@ -32,6 +32,8 @@ export type StorageAdapter = {
 export type StateBackend = {
   readonly scope: DeploymentScope;
   readonly capabilities: BackendCapabilities;
+  /** Console base URL for SaaS backends (used to inject SI_CONSOLE_URL). */
+  readonly consoleUrl?: string;
   loadState: () => Promise<StateFile>;
   /** Project the migration source for the selected provider/region under the source lock. */
   loadMigrationStates?: (allStages: boolean) => Promise<StateFile[]>;

@@ -382,6 +382,7 @@ export const createSaasStateBackend = async (
   return {
     scope: normalized,
     capabilities,
+    consoleUrl,
 
     loadState: async (): Promise<StateFile> => {
       await ensureResolved(normalized.provider, normalized.stage);
@@ -761,6 +762,7 @@ export const createSaasStateBackend = async (
         '/api/v1/runtime-keys',
         { stage: normalized.stage, serviceId: resolvedServiceId },
       );
+      logger.debug(lang.__('CONFIG_RUNTIME_KEY_ISSUED', { rotated: String(response.rotated) }));
       return { token: response.fullKey, consoleUrl };
     },
 

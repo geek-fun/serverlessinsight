@@ -1,10 +1,11 @@
 import { getIacLocation, logger, setContext, setIac, getContext } from '../common';
-import { StateBackendType } from '../types';
+import { ServerlessIac, StateBackendType } from '../types';
 import {
   beginConfigSession,
   endConfigSession,
   collectConfigRefs,
   applyConfigResolution,
+  setAppliedConfigMeta,
 } from '../common/configSession';
 import { resolveConfigRefsViaSaas } from '../common/configClient';
 import { writeLocalConfigSnapshot } from './config';
@@ -20,10 +21,14 @@ export type RunLocalOptions = {
   provider?: string;
   region?: string;
   strictPrefix?: boolean;
+  siApiKey?: string;
+  org?: string;
+  line?: string;
 };
 
 export const runLocal = async (opts: RunLocalOptions) => {
-  const { stage, debug, watch, location, provider, region, strictPrefix } = opts;
+  const { stage, debug, watch, location, provider, region, strictPrefix, siApiKey, org, line } =
+    opts;
 
   const iacLocation = getIacLocation(location);
   const rawIac = parseYaml(iacLocation);
@@ -43,32 +48,47 @@ export const runLocal = async (opts: RunLocalOptions) => {
   // merged snapshot the runtime SDK reads in local mode. Without SaaS
   // credentials the run keeps the raw templates and says so — local stays
   // offline-capable.
-  const configRefs = collectConfigRefs(rawIac);
-  const session = beginConfigSession();
+  const configRefs = collectConfigRefs(rawIac, stage);
+  let evaluatedIac: ServerlessIac;
   let resolvedLocally = false;
-  if (configRefs.length > 0 && rawIac.backend?.type === StateBackendType.SAAS) {
-    try {
-      const resolved = await resolveConfigRefsViaSaas(configRefs, {
-        stage,
-        declaredOrg: rawIac.org,
-      });
-      for (const [ref, value] of resolved) {
-        session.resolved.set(ref, value);
+  const session = beginConfigSession();
+  try {
+    if (configRefs.length > 0 && rawIac.backend?.type === StateBackendType.SAAS) {
+      try {
+        const resolved = await resolveConfigRefsViaSaas(configRefs, {
+          stage,
+          app: rawIac.app,
+          service: rawIac.service,
+          provider: ctx.provider,
+          region: ctx.region,
+          siApiKey,
+          declaredOrg: rawIac.org,
+          org,
+          line,
+        });
+        for (const [ref, value] of resolved) {
+          session.resolved.set(ref, value);
+        }
+        resolvedLocally = true;
+      } catch (error) {
+        logger.warn(
+          lang.__('CONFIG_LOCAL_RESOLVE_FAILED', {
+            reason: error instanceof Error ? error.message : String(error),
+          }),
+        );
       }
-      resolvedLocally = true;
-    } catch (error) {
-      logger.warn(
-        lang.__('CONFIG_LOCAL_RESOLVE_FAILED', {
-          reason: error instanceof Error ? error.message : String(error),
-        }),
-      );
     }
-  }
 
-  const evaluatedIac = revalYaml(iacLocation, ctx);
-  // Applied meta is stored module-level for the sanitization pipeline.
-  applyConfigResolution(evaluatedIac);
-  endConfigSession();
+    evaluatedIac = revalYaml(iacLocation, ctx);
+    // Only apply substitution when resolution succeeded; offline runs keep raw
+    // templates intact without failing on unresolved sentinels.
+    if (resolvedLocally) {
+      applyConfigResolution(evaluatedIac);
+    }
+  } finally {
+    endConfigSession();
+    setAppliedConfigMeta(null);
+  }
   const iac = {
     ...evaluatedIac,
     provider: { ...evaluatedIac.provider, name: ctx.provider, region: ctx.region },

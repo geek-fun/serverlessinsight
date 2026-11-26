@@ -1652,6 +1652,7 @@ export const en = {
   HELP_ROOT_EXAMPLES:
     'Typical workflow:\n  si login                                        authenticate, then the profile is stored locally\n  si diff -f serverlessinsight.yml -s prod        preview changes before deploying\n  si deploy -f serverlessinsight.yml -s prod      deploy the stack\n  si show                                         inspect what is deployed\n  si destroy                                      tear the stack down\n\nSaaS state commands use Console credentials: run si login once, or pass --si-api-key where the command supports it. Run si <command> --help for the full option list.',
   // ── si config (epic #53 P1) ──
+  CMD_CONFIG_DESC: 'manage config sets and secrets in SI SaaS',
   CMD_CONFIG_LIST_DESC: 'List config sets for the yaml app',
   CMD_CONFIG_SET_DESC:
     'Create or update a config item (value via hidden prompt or --stdin; never --value)',
@@ -1660,11 +1661,22 @@ export const en = {
   CMD_CONFIG_TAG_DESC: 'Attach a named tag to a version',
   CMD_CONFIG_DELETE_DESC: 'Remove a config item from the latest version',
   OPT_CONFIG_TYPE: 'Item type: string | number | boolean | json | yaml | text | secret',
+  OPT_CONFIG_SCOPE: 'Target config set scope: org | app | service | stage',
+  OPT_CONFIG_DESCRIPTION: 'Optional description for the config item',
   OPT_CONFIG_STDIN: 'Read the value from stdin instead of the hidden prompt',
   OPT_CONFIG_VERSION: 'Target version number',
   OPT_CONFIG_TAG: 'Tag name to attach',
   CONFIG_SET_VALUE_PROMPT: 'Value (hidden input): ',
+  CONFIG_SET_STDIN_NOT_TTY:
+    'Cannot prompt for hidden input on a non-interactive terminal — pass --stdin to pipe the value',
   CONFIG_SET_REF_INVALID: 'Config reference "{{ref}}" must be <name>.<key>',
+  CONFIG_SET_INVALID_TYPE:
+    'Invalid config item type "{{type}}" — expected one of: string, number, boolean, json, yaml, text, secret',
+  CONFIG_SET_INVALID_SCOPE:
+    'Invalid config scope "{{scope}}" — expected one of: org, app, service, stage',
+  CONFIG_VERSION_INVALID: 'Invalid version "{{version}}" — expected a positive integer',
+  CONFIG_SET_AMBIGUOUS:
+    'Multiple config sets named "{{name}}" match ({{matches}}) — pass --stage or --scope to disambiguate',
   CONFIG_SET_VALUE_EMPTY: 'Config value is empty — nothing to set',
   CONFIG_SET_NO_SERVICE:
     'Config sets need a service context: app "{{app}}" / service "{{service}}" not found in SI SaaS',
@@ -1691,8 +1703,6 @@ export const en = {
   CONFIG_RUNTIME_KEY_ISSUED: 'Runtime config key issued (rotated={{rotated}})',
   CONFIG_RUNTIME_TOKEN_INJECTED:
     'SI_CONFIG_TOKEN / SI_CONSOLE_URL injected into function environments',
-  CONFIG_RUNTIME_KEY_NOT_READY:
-    'Runtime key issuance needs the deployment identity — run deploy against the SaaS backend',
   CONFIG_LOCAL_RESOLVE_FAILED:
     'Config refs not resolved for local run: {{reason}} — the snapshot file was not written',
   CONFIG_LOCAL_SNAPSHOT_WRITTEN: 'Local config snapshot written to {{file}} ({{count}} entries)',

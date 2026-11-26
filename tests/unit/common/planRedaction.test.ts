@@ -169,4 +169,88 @@ describe('config-ref provenance in plan diffs (epic #53 P1)', () => {
     // lang is real here — PLAN_SENSITIVE_VALUE translates to '(sensitive)'.
     expect(redacted.children![0]!.after).toBe('(sensitive)');
   });
+
+  it('masks non-secret-named env vars holding a session secret on create and refreshed update', async () => {
+    const { beginConfigSession, applyConfigResolution, endConfigSession, setAppliedConfigMeta } =
+      await import('../../../src/common/configSession');
+    const session = beginConfigSession();
+    session.placeholderOf('stripe.signing_val');
+    session.resolved.set('stripe.signing_val', {
+      value: 'whsec_live_999',
+      versionNumber: 4,
+      secret: true,
+      scope: 'stage',
+      configSet: 'stripe',
+    });
+    applyConfigResolution({
+      functions: [{ key: 'fn', environment: { STRIPE_HOOK: '⟦si-cfg:0⟧' } }],
+      databases: [],
+    });
+
+    try {
+      // Create path (before is undefined, key name does not match SECRET_ENV_KEY)
+      const createDiffs = redactAttributeDiffs([
+        {
+          key: 'environment',
+          action: 'add' as const,
+          after: { STRIPE_HOOK: 'whsec_live_999', PLAIN: 'ok' },
+          children: [
+            { key: 'STRIPE_HOOK', action: 'add' as const, after: 'whsec_live_999' },
+            { key: 'PLAIN', action: 'add' as const, after: 'ok' },
+          ],
+        },
+      ])[0]!;
+      expect(createDiffs.after).toEqual({
+        STRIPE_HOOK: 'cfgref:config_sets.stripe.signing_val@v4',
+        PLAIN: 'ok',
+      });
+      expect(createDiffs.children![0]!.after).toBe('*** (config_sets.stripe.signing_val@v4)');
+      expect(createDiffs.children![1]!.after).toBe('ok');
+
+      // Refreshed update path (before is live plaintext from cloud, not a cfgref marker)
+      const updateDiffs = redactAttributeDiffs([
+        {
+          key: 'environment',
+          action: 'change' as const,
+          before: { STRIPE_HOOK: 'whsec_old_111' },
+          after: { STRIPE_HOOK: 'whsec_live_999' },
+          children: [
+            {
+              key: 'STRIPE_HOOK',
+              action: 'change' as const,
+              before: 'whsec_old_111',
+              after: 'whsec_live_999',
+            },
+          ],
+        },
+      ])[0]!;
+      expect(updateDiffs.before).toEqual({ STRIPE_HOOK: '[REDACTED]' });
+      expect(updateDiffs.after).toEqual({
+        STRIPE_HOOK: 'cfgref:config_sets.stripe.signing_val@v4',
+      });
+      expect(updateDiffs.children![0]!.before).toBe('(sensitive)');
+      expect(updateDiffs.children![0]!.after).toBe('*** (config_sets.stripe.signing_val@v4)');
+
+      const [redactedPlanItem] = redactPlanItems([
+        {
+          logicalId: 'functions.fn',
+          resourceType: 'ALIYUN_FC3',
+          action: 'update',
+          changes: {
+            before: { environment: { STRIPE_HOOK: 'whsec_old_111' } },
+            after: { environment: { STRIPE_HOOK: 'whsec_live_999' } },
+          },
+        } as unknown as PlanItem,
+      ]);
+      expect(redactedPlanItem.changes?.before).toEqual({
+        environment: { STRIPE_HOOK: '[REDACTED]' },
+      });
+      expect(redactedPlanItem.changes?.after).toEqual({
+        environment: { STRIPE_HOOK: '*** (config_sets.stripe.signing_val@v4)' },
+      });
+    } finally {
+      endConfigSession();
+      setAppliedConfigMeta(null);
+    }
+  });
 });

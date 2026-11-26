@@ -1,13 +1,15 @@
 import {
   isConfigRefMarker,
+  isRedactedEnvValue,
   isSensitiveEnvEntry,
   markerProvenance,
   readEnvironment,
+  REDACTED_ENV_VALUE,
   redactEnvironmentAttributes,
   sessionMarkerFor,
 } from './envRedaction';
 import { lang } from '../lang';
-import type { AttributeDiff, PlanItem } from '../types';
+import type { AttributeDiff, PlanItem, ResourceAttributes } from '../types';
 
 const SENSITIVE_FIELDS = new Set([
   'authentication',
@@ -40,6 +42,25 @@ const maskDiffValues = (diff: AttributeDiff): AttributeDiff => {
   };
 };
 
+const maskPeerSecretBefore = (
+  before: ResourceAttributes,
+  after?: ResourceAttributes,
+): ResourceAttributes => {
+  const redacted = redactEnvironmentAttributes(before);
+  const beforeEnv = readEnvironment(redacted.environment);
+  const afterEnv = readEnvironment(after?.environment);
+  if (!beforeEnv || !afterEnv) return redacted;
+  let changed = false;
+  const entries = Object.entries(beforeEnv).map(([key, value]) => {
+    if (!isRedactedEnvValue(value) && sessionMarkerFor(afterEnv[key]) !== null) {
+      changed = true;
+      return [key, REDACTED_ENV_VALUE] as const;
+    }
+    return [key, value] as const;
+  });
+  return changed ? { ...redacted, environment: Object.fromEntries(entries) } : redacted;
+};
+
 /** Compute diffs first so plans can show that a secret changed without showing its values. */
 export const redactAttributeDiffs = (diffs: AttributeDiff[]): AttributeDiff[] =>
   diffs.map((diff) => {
@@ -49,7 +70,12 @@ export const redactAttributeDiffs = (diffs: AttributeDiff[]): AttributeDiff[] =>
       const after = readEnvironment(diff.after);
       return {
         ...diff,
-        ...(before && { before: redactEnvironmentAttributes({ environment: before }).environment }),
+        ...(before && {
+          before: maskPeerSecretBefore(
+            { environment: before },
+            after ? { environment: after } : undefined,
+          ).environment,
+        }),
         ...(after && { after: redactEnvironmentAttributes({ environment: after }).environment }),
         ...(diff.children && {
           children: diff.children.map((child) =>
@@ -76,7 +102,7 @@ export const redactPlanItems = (items: PlanItem[]): PlanItem[] =>
       ...(item.changes && {
         changes: {
           ...item.changes,
-          ...(before && { before: redactEnvironmentAttributes(before) }),
+          ...(before && { before: maskPeerSecretBefore(before, after) }),
           ...(after && { after: redactEnvironmentAttributes(after, before) }),
         },
       }),

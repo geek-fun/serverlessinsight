@@ -38,7 +38,7 @@ export type ResolvedConfigValue = {
   configSet: string;
 };
 
-type SessionRecord = { ref: string; placeholder: string; exact: boolean };
+type SessionRecord = { ref: string; placeholder: string };
 
 export type ConfigResolutionSession = {
   /** ref → resolved value, filled by the batch resolve before evaluation. */
@@ -51,7 +51,7 @@ export type ConfigResolutionSession = {
 
 let activeSession: ConfigResolutionSession | null = null;
 
-/** Deploy/local start a session so `calcValue` registers refs and swaps
+/** Deploy/local/diff start a session so `calcValue` registers refs and swaps
  * sentinels; validate/show run session-less and keep the raw template. */
 export const beginConfigSession = (): ConfigResolutionSession => {
   const records = new Map<string, SessionRecord>();
@@ -65,7 +65,7 @@ export const beginConfigSession = (): ConfigResolutionSession => {
       const known = byRef.get(ref);
       if (known) return known.placeholder;
       const placeholder = `⟦si-cfg:${counter++}⟧`;
-      const record = { ref, placeholder, exact: false };
+      const record = { ref, placeholder };
       records.set(placeholder, record);
       byRef.set(ref, record);
       return placeholder;
@@ -81,23 +81,12 @@ export const endConfigSession = (): void => {
   activeSession = null;
 };
 
-/** The exact-ref flag is only knowable inside calcValue (needs the raw value). */
-export const markExactRef = (ref: string, exact: boolean): void => {
-  if (!activeSession) return;
-  for (const entry of activeSession.records.values()) {
-    if (entry.ref === ref) {
-      entry.exact = exact;
-      return;
-    }
-  }
-};
-
 export type AppliedResolution = {
   /** fn key → env key → ConfigRef (values resolved this run). */
   functionEnvRefs: Map<string, Map<string, ConfigRef>>;
   databasePasswordRefs: Map<string, ConfigRef>;
   /** Every plaintext secret value resolved this run — matched by value at the
-   * redaction boundaries so concatenated secrets also mask. */
+   * redaction boundaries so concatenated secrets and runtime tokens also mask. */
   secretValues: Set<string>;
   /** Resolved value text → the widest ConfigRef that produced it. */
   refByValue: Map<string, ConfigRef>;
@@ -111,6 +100,22 @@ export const setAppliedConfigMeta = (meta: AppliedResolution | null): void => {
 
 export const getAppliedConfigMeta = (): AppliedResolution | null => appliedMeta;
 
+/** Register a deploy-time secret (e.g. minted/preserved SI_CONFIG_TOKEN) so
+ * deep event/error scrubbing never leaks it. */
+export const registerRuntimeSecret = (secret: string): void => {
+  if (!secret) return;
+  if (!appliedMeta) {
+    appliedMeta = {
+      functionEnvRefs: new Map(),
+      databasePasswordRefs: new Map(),
+      secretValues: new Set([secret]),
+      refByValue: new Map(),
+    };
+    return;
+  }
+  appliedMeta.secretValues.add(secret);
+};
+
 export const configRefMarker = (ref: ConfigRef): string =>
   `cfgref:${ref.configRef}@v${ref.versionNumber}`;
 
@@ -123,14 +128,6 @@ export const parseConfigRefMarker = (value: string): ConfigRef | null => {
 export const isConfigRefMarker = (value: unknown): value is string =>
   typeof value === 'string' && /^cfgref:.+?@v\d+$/.test(value);
 
-/** Infer the scalar type of a whole-value ref's resolved value (issue #53 P1). */
-const inferScalar = (value: string): string | number | boolean => {
-  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  return value;
-};
-
 type FnLike = { key: string; environment?: Record<string, unknown> };
 
 type DatabaseLike = {
@@ -138,13 +135,35 @@ type DatabaseLike = {
   security?: { basicAuth?: { password?: unknown }; basic_auth?: { password?: unknown } };
 };
 
+const collectRemainingSentinels = (value: unknown, out: Set<string>): void => {
+  if (typeof value === 'string') {
+    if (value.includes('⟦si-cfg:')) out.add(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectRemainingSentinels(entry, out));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach((entry) => collectRemainingSentinels(entry, out));
+  }
+};
+
 /**
- * Pass 2 — substitute sentinels with resolved values and record the refs per
- * owner. Only `functions.*.environment` and `databases.*.password` are
- * supported in P1 (issue #53); sentinels anywhere else fail closed.
+ * Pass 2 — substitute sentinels with resolved string values and record the refs
+ * per owner. Only `functions.*.environment` and `databases.*.password` are
+ * supported in P1 (issue #53); sentinels left anywhere else in deployed
+ * sections fail closed.
  */
 export const applyConfigResolution = <
-  T extends { functions?: FnLike[]; databases?: DatabaseLike[] },
+  T extends {
+    functions?: FnLike[];
+    databases?: DatabaseLike[];
+    events?: unknown;
+    buckets?: unknown;
+    tables?: unknown;
+    tags?: unknown;
+  },
 >(
   iac: T,
 ): AppliedResolution => {
@@ -154,12 +173,11 @@ export const applyConfigResolution = <
   const secretValues = new Set<string>();
   const refByValueGlobal = new Map<string, ConfigRef>();
 
-  const substitute = (raw: string): { text: string | number | boolean; ref?: ConfigRef } => {
+  const substitute = (raw: string): { text: string; ref?: ConfigRef } => {
     if (!raw.includes('⟦si-cfg:')) return { text: raw };
     let text = raw;
-    let exactRef: ConfigRef | undefined;
-    let concatenatedSecret = false;
-    let typedValue: string | number | boolean | undefined;
+    let lastRef: ConfigRef | undefined;
+    let secretRef: ConfigRef | undefined;
     for (const [placeholder, record] of session?.records ?? []) {
       if (!text.includes(placeholder)) continue;
       const resolved = session?.resolved.get(record.ref);
@@ -176,18 +194,13 @@ export const applyConfigResolution = <
         versionNumber: resolved.versionNumber,
         secret: resolved.secret,
       };
-      const isExact = record.exact && raw.trim() === placeholder;
       text = text.split(placeholder).join(resolved.value);
-      // Whole-value refs keep the inferred scalar type (issue #53 P1).
-      if (isExact) typedValue = inferScalar(resolved.value);
       if (resolved.secret) {
-        concatenatedSecret = true;
         secretValues.add(resolved.value);
-        secretValues.add(text);
         refByValueGlobal.set(resolved.value, ref);
-        refByValueGlobal.set(text, ref);
+        secretRef = ref;
       }
-      exactRef = ref;
+      lastRef = ref;
     }
     // A sentinel that never resolved (or was never registered) fails closed —
     // deploys must not ship unresolved placeholders (issue #53 P1).
@@ -196,12 +209,14 @@ export const applyConfigResolution = <
         lang.__('CONFIG_ITEM_NOT_FOUND', { refs: text, scopes: 'stage, service, app, org' }),
       );
     }
-    if (concatenatedSecret) {
+    if (secretRef) {
       // A concatenation containing a secret ref is sensitive as a whole —
-      // keep the widest ref for provenance.
-      return { text: typedValue ?? text, ref: exactRef };
+      // record the FINAL substituted text so later non-secret refs never drop it.
+      secretValues.add(text);
+      refByValueGlobal.set(text, secretRef);
+      return { text, ref: secretRef };
     }
-    return { text: typedValue ?? text, ref: exactRef };
+    return { text, ref: lastRef };
   };
 
   for (const fn of iac.functions ?? []) {
@@ -242,6 +257,22 @@ export const applyConfigResolution = <
     }
   }
 
+  // Fail closed if any sentinel leaked into an unsupported deployed field
+  // (e.g. function name, event, bucket, table, tag, or non-password DB field).
+  const remainingSentinels = new Set<string>();
+  collectRemainingSentinels(
+    {
+      functions: iac.functions,
+      databases: iac.databases,
+      events: iac.events,
+      buckets: iac.buckets,
+      tables: iac.tables,
+      tags: iac.tags,
+    },
+    remainingSentinels,
+  );
+  assertNoRemainingSentinels(remainingSentinels);
+
   const meta: AppliedResolution = {
     functionEnvRefs,
     databasePasswordRefs,
@@ -267,26 +298,62 @@ export const assertNoRemainingSentinels = (values: Iterable<string>): void => {
   }
 };
 
-/** Scan the RAW yaml tree for `${config_sets.*}` refs in the P1-supported fields. */
-export const collectConfigRefs = (rawIac: {
-  functions?: Array<{ environment?: Record<string, unknown> }>;
-  databases?: Array<{ security?: { basicAuth?: { password?: unknown } } }>;
-}): string[] => {
-  const refs = new Set<string>();
-  for (const fn of rawIac.functions ?? []) {
-    for (const value of Object.values(fn.environment ?? {})) {
-      if (typeof value !== 'string') continue;
-      for (const match of value.matchAll(CONFIG_REF_TEMPLATE)) {
-        refs.add(match[1]!);
+const extractConfigRefsFromString = (
+  value: string,
+  refs: Set<string>,
+  vars?: Record<string, unknown>,
+  stageVars?: Record<string, unknown>,
+): void => {
+  for (const match of value.matchAll(CONFIG_REF_TEMPLATE)) {
+    refs.add(match[1]!);
+  }
+  if (vars) {
+    for (const match of value.matchAll(/\$\{vars\.(\w+)\}/g)) {
+      const indirect = vars[match[1]!];
+      if (typeof indirect === 'string') {
+        for (const inner of indirect.matchAll(CONFIG_REF_TEMPLATE)) {
+          refs.add(inner[1]!);
+        }
       }
     }
   }
-  for (const db of rawIac.databases ?? []) {
-    const password = db.security?.basicAuth?.password;
-    if (typeof password !== 'string') continue;
-    for (const match of password.matchAll(CONFIG_REF_TEMPLATE)) {
-      refs.add(match[1]!);
+  if (stageVars) {
+    for (const match of value.matchAll(/\$\{stages\.(\w+)\}/g)) {
+      const indirect = stageVars[match[1]!];
+      if (typeof indirect === 'string') {
+        for (const inner of indirect.matchAll(CONFIG_REF_TEMPLATE)) {
+          refs.add(inner[1]!);
+        }
+      }
     }
+  }
+};
+
+/** Scan the RAW yaml tree for `${config_sets.*}` refs in the P1-supported fields,
+ * including indirect `${vars.*}` / `${stages.*}` references pointing to config_sets. */
+export const collectConfigRefs = (
+  rawIac: {
+    functions?: Array<{ environment?: Record<string, unknown> }>;
+    databases?: Array<{
+      security?: { basicAuth?: { password?: unknown }; basic_auth?: { password?: unknown } };
+    }>;
+    vars?: Record<string, unknown>;
+    stages?: Record<string, Record<string, unknown>>;
+  },
+  stage?: string,
+): string[] => {
+  const refs = new Set<string>();
+  const stageVars = stage ? rawIac.stages?.[stage] : undefined;
+  for (const fn of rawIac.functions ?? []) {
+    for (const value of Object.values(fn.environment ?? {})) {
+      if (typeof value !== 'string') continue;
+      extractConfigRefsFromString(value, refs, rawIac.vars, stageVars);
+    }
+  }
+  for (const db of rawIac.databases ?? []) {
+    const password = db.security?.basicAuth?.password ?? db.security?.basic_auth?.password;
+    if (typeof password !== 'string') continue;
+    extractConfigRefsFromString(password, refs, rawIac.vars, stageVars);
   }
   return [...refs];
 };

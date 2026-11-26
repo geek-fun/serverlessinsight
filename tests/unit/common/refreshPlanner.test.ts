@@ -373,3 +373,140 @@ describe('refresh safety and intent adoption (issue #264)', () => {
     expect(read).not.toHaveBeenCalled();
   });
 });
+
+describe('config-set provenance & runtime token preservation (epic #53)', () => {
+  const baseState: ResourceState = {
+    mode: 'managed',
+    region: 'cn-hangzhou',
+    definition: {
+      memory: 128,
+      environment: {
+        STRIPE_HOOK: 'cfgref:config_sets.stripe.signing_val@v3',
+        SI_CONFIG_TOKEN: '[REDACTED]',
+        SI_CONSOLE_URL: 'https://console.example.test',
+      },
+    },
+    instances: [],
+    lastUpdated: 'now',
+  };
+
+  it('treats live SI_CONFIG_TOKEN as matching RUNTIME_TOKEN_PRESERVE (noop) and flags drift when deleted', async () => {
+    const { RUNTIME_TOKEN_PRESERVE } = await import('../../../src/common/envRedaction');
+    const desired = {
+      memory: 128,
+      environment: {
+        STRIPE_HOOK: 'whsec_old',
+        SI_CONFIG_TOKEN: RUNTIME_TOKEN_PRESERVE,
+        SI_CONSOLE_URL: 'https://console.example.test',
+      },
+    };
+    const noopResult = await planRefreshedResource({
+      logicalId: 'functions.api',
+      resourceType: 'ALIYUN_FC3',
+      currentState: baseState,
+      desiredDefinition: desired,
+      read: async () => ({
+        memory: 128,
+        environment: {
+          STRIPE_HOOK: 'whsec_old',
+          SI_CONFIG_TOKEN: 'sirt_com_live_123',
+          SI_CONSOLE_URL: 'https://console.example.test',
+        },
+      }),
+      cloudToDefinition: (v) => v,
+      isOwned: () => true,
+      foreignError: () => new Error('foreign'),
+    });
+    expect(noopResult.action).toBe('noop');
+
+    const driftedResult = await planRefreshedResource({
+      logicalId: 'functions.api',
+      resourceType: 'ALIYUN_FC3',
+      currentState: baseState,
+      desiredDefinition: desired,
+      read: async () => ({
+        memory: 128,
+        environment: {
+          STRIPE_HOOK: 'whsec_old',
+          SI_CONSOLE_URL: 'https://console.example.test',
+        },
+      }),
+      cloudToDefinition: (v) => v,
+      isOwned: () => true,
+      foreignError: () => new Error('foreign'),
+    });
+    expect(driftedResult.action).toBe('update');
+    expect(driftedResult.drifted).toBe(true);
+  });
+
+  it('restores stored cfgref marker on refreshed update so plan diffs render v3 → v5 provenance', async () => {
+    const { beginConfigSession, applyConfigResolution, endConfigSession, setAppliedConfigMeta } =
+      await import('../../../src/common/configSession');
+    const { redactPlanItems } = await import('../../../src/common/planRedaction');
+    const { RUNTIME_TOKEN_PRESERVE } = await import('../../../src/common/envRedaction');
+
+    const session = beginConfigSession();
+    session.placeholderOf('stripe.signing_val');
+    session.resolved.set('stripe.signing_val', {
+      value: 'whsec_new_v5',
+      versionNumber: 5,
+      secret: true,
+      scope: 'stage',
+      configSet: 'stripe',
+    });
+    applyConfigResolution({
+      functions: [{ key: 'api', environment: { STRIPE_HOOK: '⟦si-cfg:0⟧' } }],
+      databases: [],
+    });
+
+    try {
+      const result = await planRefreshedResource({
+        logicalId: 'functions.api',
+        resourceType: 'ALIYUN_FC3',
+        currentState: baseState,
+        desiredDefinition: {
+          memory: 128,
+          environment: {
+            STRIPE_HOOK: 'whsec_new_v5',
+            SI_CONFIG_TOKEN: RUNTIME_TOKEN_PRESERVE,
+            SI_CONSOLE_URL: 'https://console.example.test',
+          },
+        },
+        read: async () => ({
+          memory: 128,
+          environment: {
+            STRIPE_HOOK: 'whsec_old_v3',
+            SI_CONFIG_TOKEN: 'sirt_com_live_123',
+            SI_CONSOLE_URL: 'https://console.example.test',
+          },
+        }),
+        cloudToDefinition: (v) => v,
+        isOwned: () => true,
+        foreignError: () => new Error('foreign'),
+      });
+
+      expect(result.action).toBe('update');
+      // Preserved live runtime token stays aligned across before/after (no spurious token diff).
+      expect(
+        (result.changes?.before?.environment as Record<string, unknown>)?.SI_CONFIG_TOKEN,
+      ).toBe('sirt_com_live_123');
+      expect((result.changes?.after?.environment as Record<string, unknown>)?.SI_CONFIG_TOKEN).toBe(
+        'sirt_com_live_123',
+      );
+      // Stored cfgref marker is restored onto `before` so provenance shows v3 → v5.
+      expect((result.changes?.before?.environment as Record<string, unknown>)?.STRIPE_HOOK).toBe(
+        'cfgref:config_sets.stripe.signing_val@v3',
+      );
+      const [redacted] = redactPlanItems([result]);
+      expect((redacted.changes?.after?.environment as Record<string, unknown>)?.STRIPE_HOOK).toBe(
+        '*** (config_sets.stripe.signing_val@v3 → v5)',
+      );
+      expect(
+        (redacted.changes?.before?.environment as Record<string, unknown>)?.SI_CONFIG_TOKEN,
+      ).toBe('[REDACTED]');
+    } finally {
+      endConfigSession();
+      setAppliedConfigMeta(null);
+    }
+  });
+});

@@ -24,7 +24,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -67,7 +67,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -110,7 +110,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -153,7 +153,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -196,7 +196,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -239,7 +239,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -282,7 +282,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -325,7 +325,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -368,7 +368,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -411,7 +411,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -454,7 +454,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -497,7 +497,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)
@@ -540,7 +540,7 @@ Commands:
                                    (one-time; run AFTER upgrading every writer
                                    CLI)
   destroy [options]                destroy serverless stack
-  config                           CMD_CONFIG_DESC
+  config                           manage config sets and secrets in SI SaaS
   local [options]                  run Serverless application locally for
                                    debugging (uses no state backend — no login
                                    or cloud state involved)

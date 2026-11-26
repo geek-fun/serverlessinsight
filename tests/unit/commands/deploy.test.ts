@@ -65,6 +65,8 @@ const mockedCollectConfigRefs = jest.fn<string[], []>(() => []);
 const mockedBeginConfigSession = jest.fn();
 const mockedApplyConfigResolution = jest.fn();
 const mockedEndConfigSession = jest.fn();
+const mockedSetAppliedConfigMeta = jest.fn();
+const mockedRegisterRuntimeSecret = jest.fn();
 const mockedResolveConfigRefsViaSaas = jest.fn();
 
 jest.mock('../../../src/common/configSession', () => ({
@@ -72,11 +74,11 @@ jest.mock('../../../src/common/configSession', () => ({
   beginConfigSession: (...args: unknown[]) => mockedBeginConfigSession(...args),
   applyConfigResolution: (...args: unknown[]) => mockedApplyConfigResolution(...args),
   endConfigSession: (...args: unknown[]) => mockedEndConfigSession(...args),
+  setAppliedConfigMeta: (...args: unknown[]) => mockedSetAppliedConfigMeta(...args),
+  registerRuntimeSecret: (...args: unknown[]) => mockedRegisterRuntimeSecret(...args),
   // Other modules (iacHelper, envRedaction, planRedaction) import these.
   activeConfigSession: jest.fn(),
-  markExactRef: jest.fn(),
   getAppliedConfigMeta: jest.fn(),
-  setAppliedConfigMeta: jest.fn(),
   configRefMarker: jest.fn(),
   parseConfigRefMarker: jest.fn(),
   isConfigRefMarker: jest.fn((): boolean => false),
@@ -155,7 +157,7 @@ describe('unit test for deploy command', () => {
     jest.clearAllMocks();
   });
 
-  it('resolves config refs and injects the runtime token on a SaaS deploy (epic #53)', async () => {
+  it('resolves config refs with scope and issues runtime token post-approval inside withLock (epic #53)', async () => {
     setupAliyunMocks();
 
     const session = {
@@ -183,15 +185,12 @@ describe('unit test for deploy command', () => {
       backend: { type: 'SAAS' },
     };
 
-    // Once-only stubs — persistent mocks would leak into every later deploy test.
-    // The yaml must carry the SaaS backend for the config path to engage.
     mockedParseYaml.mockReturnValueOnce(withRefs);
-    // Pass 1: revalYaml hands back sentinels; the real applyConfigResolution
-    // substitutes them in place — the stub mimics that mutation.
-    mockedRevalYaml.mockReturnValueOnce({
+    const revalIac = {
       ...aliyunIac,
       functions: [{ key: 'insight_poc_fn', environment: { DB_HOST: '⟦si-cfg:0⟧' } }],
-    });
+    };
+    mockedRevalYaml.mockReturnValueOnce(revalIac);
     mockedCollectConfigRefs.mockReturnValueOnce(['db.host']);
     mockedBeginConfigSession.mockReturnValueOnce(session);
     mockedResolveConfigRefsViaSaas.mockResolvedValueOnce(session.resolved);
@@ -208,28 +207,43 @@ describe('unit test for deploy command', () => {
     );
     const saasBackend = {
       ...mockBackend,
+      consoleUrl: 'https://console.example.test',
       issueRuntimeConfigToken: jest.fn().mockResolvedValue({
         token: 'sirt_com_x',
         consoleUrl: 'https://console.example.test',
       }),
     };
     mockedCreateStateBackend.mockReturnValueOnce(saasBackend);
+    // Snapshot the token seen during planning BEFORE withLock mutates it.
+    let tokenDuringPlan: string | undefined;
+    mockedGenerateAliyunPlan.mockImplementationOnce(async (iac) => {
+      tokenDuringPlan = iac.functions[0]?.environment?.SI_CONFIG_TOKEN;
+      expect(saasBackend.issueRuntimeConfigToken).not.toHaveBeenCalled();
+      return {
+        items: [
+          { logicalId: 'functions.insight_poc_fn', action: 'create', resourceType: 'ALIYUN_FC3' },
+        ],
+      };
+    });
 
     await deploy(baseOptions);
 
-    // resolve happens with the deploy stage and the yaml org anchor
     expect(mockedResolveConfigRefsViaSaas).toHaveBeenCalledWith(['db.host'], {
       stage: undefined,
+      app: 'test-app',
+      service: 'test-svc',
+      provider: 'aliyun',
+      region: 'cn-hangzhou',
       siApiKey: undefined,
       declaredOrg: 'my-org',
       org: undefined,
       line: undefined,
     });
-    // the runtime token + console URL land in every function environment before planning
     expect(mockedApplyConfigResolution).toHaveBeenCalled();
+    expect(tokenDuringPlan).toBe('⟦si-runtime-token⟧');
     expect(saasBackend.issueRuntimeConfigToken).toHaveBeenCalledTimes(1);
-    // The plan sees the resolved value plus the injected runtime variables.
-    expect(mockedGenerateAliyunPlan).toHaveBeenCalledWith(
+    expect(mockedRegisterRuntimeSecret).toHaveBeenCalledWith('sirt_com_x');
+    expect(mockedDeployStack).toHaveBeenCalledWith(
       expect.objectContaining({
         functions: [
           expect.objectContaining({
@@ -242,8 +256,173 @@ describe('unit test for deploy command', () => {
         ],
       }),
       saasBackend,
+      expect.anything(),
     );
-    expect(mockedDeployStack).toHaveBeenCalled();
+    expect(mockedSetAppliedConfigMeta).toHaveBeenLastCalledWith(null);
+  });
+
+  it('does NOT rotate the runtime token when deploy confirmation is declined or plan is noop', async () => {
+    setupAliyunMocks();
+    const session = { resolved: new Map(), records: new Map(), placeholderOf: jest.fn() };
+    const withRefs = { ...aliyunRawIac, org: 'my-org', backend: { type: 'SAAS' } };
+
+    // Case 1: declined confirmation
+    mockedParseYaml.mockReturnValueOnce(withRefs);
+    mockedRevalYaml.mockReturnValueOnce({
+      ...aliyunIac,
+      functions: [{ key: 'insight_poc_fn', environment: { DB_HOST: 'db.prod' } }],
+    });
+    mockedCollectConfigRefs.mockReturnValueOnce(['db.host']);
+    mockedBeginConfigSession.mockReturnValueOnce(session);
+    mockedResolveConfigRefsViaSaas.mockResolvedValueOnce(new Map());
+    const saasBackend = {
+      ...mockBackend,
+      consoleUrl: 'https://console.example.test',
+      issueRuntimeConfigToken: jest.fn(),
+    };
+    mockedCreateStateBackend.mockReturnValueOnce(saasBackend);
+    mockedGenerateAliyunPlan.mockResolvedValueOnce({
+      items: [
+        { logicalId: 'functions.insight_poc_fn', action: 'update', resourceType: 'ALIYUN_FC3' },
+      ],
+    });
+    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    (readline.createInterface as jest.Mock).mockReturnValueOnce({
+      question: (_q: string, cb: (ans: string) => void) => cb('no'),
+      close: jest.fn(),
+    });
+    try {
+      await deploy({ ...baseOptions, autoApprove: false });
+    } finally {
+      if (originalIsTTY) Object.defineProperty(process.stdin, 'isTTY', originalIsTTY);
+    }
+    expect(saasBackend.issueRuntimeConfigToken).not.toHaveBeenCalled();
+    expect(mockedDeployStack).not.toHaveBeenCalled();
+
+    // Case 2: noop redeploy
+    mockedParseYaml.mockReturnValueOnce(withRefs);
+    mockedRevalYaml.mockReturnValueOnce({
+      ...aliyunIac,
+      functions: [{ key: 'insight_poc_fn', environment: { DB_HOST: 'db.prod' } }],
+    });
+    mockedCollectConfigRefs.mockReturnValueOnce(['db.host']);
+    mockedBeginConfigSession.mockReturnValueOnce(session);
+    mockedResolveConfigRefsViaSaas.mockResolvedValueOnce(new Map());
+    mockedCreateStateBackend.mockReturnValueOnce(saasBackend);
+    mockedGenerateAliyunPlan.mockResolvedValueOnce(planAllNoop);
+    await deploy(baseOptions);
+    expect(saasBackend.issueRuntimeConfigToken).not.toHaveBeenCalled();
+  });
+
+  it('preserves existing live SI_CONFIG_TOKEN on update without rotating, and promotes sibling noop functions on rotation', async () => {
+    setupAliyunMocks();
+    const session = { resolved: new Map(), records: new Map(), placeholderOf: jest.fn() };
+    const withRefs = { ...aliyunRawIac, org: 'my-org', backend: { type: 'SAAS' } };
+
+    // Case 1: update with live token present -> preserved, no rotation
+    mockedParseYaml.mockReturnValueOnce(withRefs);
+    mockedRevalYaml.mockReturnValueOnce({
+      ...aliyunIac,
+      functions: [{ key: 'fn_a', environment: { DB_HOST: 'new-host' } }],
+    });
+    mockedCollectConfigRefs.mockReturnValueOnce(['db.host']);
+    mockedBeginConfigSession.mockReturnValueOnce(session);
+    mockedResolveConfigRefsViaSaas.mockResolvedValueOnce(new Map());
+    const saasBackend = {
+      ...mockBackend,
+      consoleUrl: 'https://console.example.test',
+      issueRuntimeConfigToken: jest.fn().mockResolvedValue({
+        token: 'sirt_com_rotated',
+        consoleUrl: 'https://console.example.test',
+      }),
+    };
+    mockedCreateStateBackend.mockReturnValueOnce(saasBackend);
+    mockedGenerateAliyunPlan.mockResolvedValueOnce({
+      items: [
+        {
+          logicalId: 'functions.fn_a',
+          action: 'update',
+          resourceType: 'ALIYUN_FC3',
+          changes: {
+            before: { environment: { DB_HOST: 'old-host', SI_CONFIG_TOKEN: 'sirt_com_live_old' } },
+            after: { environment: { DB_HOST: 'new-host', SI_CONFIG_TOKEN: 'sirt_com_live_old' } },
+          },
+        },
+      ],
+    });
+    await deploy(baseOptions);
+    expect(saasBackend.issueRuntimeConfigToken).not.toHaveBeenCalled();
+    expect(mockedRegisterRuntimeSecret).toHaveBeenCalledWith('sirt_com_live_old');
+    expect(mockedDeployStack).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        functions: [
+          expect.objectContaining({
+            environment: expect.objectContaining({ SI_CONFIG_TOKEN: 'sirt_com_live_old' }),
+          }),
+        ],
+      }),
+      saasBackend,
+      expect.anything(),
+    );
+
+    // Case 2: new sibling fn_b triggers rotation -> unchanged noop fn_a promoted to update
+    mockedParseYaml.mockReturnValueOnce(withRefs);
+    mockedRevalYaml.mockReturnValueOnce({
+      ...aliyunIac,
+      functions: [
+        { key: 'fn_a', environment: { DB_HOST: 'host' } },
+        { key: 'fn_b', environment: { DB_HOST: 'host' } },
+      ],
+    });
+    mockedCollectConfigRefs.mockReturnValueOnce(['db.host']);
+    mockedBeginConfigSession.mockReturnValueOnce(session);
+    mockedResolveConfigRefsViaSaas.mockResolvedValueOnce(new Map());
+    mockedCreateStateBackend.mockReturnValueOnce(saasBackend);
+    mockedGenerateAliyunPlan.mockResolvedValueOnce({
+      items: [
+        { logicalId: 'functions.fn_a', action: 'noop', resourceType: 'ALIYUN_FC3' },
+        { logicalId: 'functions.fn_b', action: 'create', resourceType: 'ALIYUN_FC3' },
+      ],
+    });
+    await deploy(baseOptions);
+    expect(saasBackend.issueRuntimeConfigToken).toHaveBeenCalledTimes(1);
+    expect(mockedDeployStack).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        functions: [
+          expect.objectContaining({
+            key: 'fn_a',
+            environment: expect.objectContaining({ SI_CONFIG_TOKEN: 'sirt_com_rotated' }),
+          }),
+          expect.objectContaining({
+            key: 'fn_b',
+            environment: expect.objectContaining({ SI_CONFIG_TOKEN: 'sirt_com_rotated' }),
+          }),
+        ],
+      }),
+      saasBackend,
+      {
+        items: [
+          { logicalId: 'functions.fn_a', action: 'update', resourceType: 'ALIYUN_FC3' },
+          { logicalId: 'functions.fn_b', action: 'create', resourceType: 'ALIYUN_FC3' },
+        ],
+      },
+    );
+  });
+
+  it('closes config session in finally when resolveConfigRefsViaSaas fails', async () => {
+    setupAliyunMocks();
+    const withRefs = { ...aliyunRawIac, backend: { type: 'SAAS' } };
+    mockedParseYaml.mockReturnValueOnce(withRefs);
+    mockedCollectConfigRefs.mockReturnValueOnce(['db.host']);
+    mockedBeginConfigSession.mockReturnValueOnce({
+      resolved: new Map(),
+      records: new Map(),
+      placeholderOf: jest.fn(),
+    });
+    mockedResolveConfigRefsViaSaas.mockRejectedValueOnce(new Error('network down'));
+    await expect(deploy(baseOptions)).rejects.toThrow('network down');
+    expect(mockedEndConfigSession).toHaveBeenCalled();
   });
 
   it('fails closed on config refs without a SaaS backend (epic #53)', async () => {

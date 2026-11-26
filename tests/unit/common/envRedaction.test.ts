@@ -210,12 +210,17 @@ describe('config-set ref markers (epic #53 P1)', () => {
 });
 
 describe('redactPayloadDeep (epic #53 P1 — event stream never carries secrets)', () => {
-  it('scrubs secret values anywhere in an arbitrary payload, preserving structure', async () => {
-    const { beginConfigSession, applyConfigResolution, endConfigSession } =
-      await import('../../../src/common/configSession');
+  it('scrubs both exact and substring secret occurrences (including runtime tokens), longest-first', async () => {
+    const {
+      beginConfigSession,
+      applyConfigResolution,
+      endConfigSession,
+      registerRuntimeSecret,
+      setAppliedConfigMeta,
+    } = await import('../../../src/common/configSession');
     const session = beginConfigSession();
-    // calcValue would normally register this sentinel during evaluation.
     session.placeholderOf('db.password');
+    session.placeholderOf('db.host');
     session.resolved.set('db.password', {
       value: 'sup3r-s3cret',
       versionNumber: 5,
@@ -223,25 +228,48 @@ describe('redactPayloadDeep (epic #53 P1 — event stream never carries secrets)
       scope: 'stage',
       configSet: 'db',
     });
+    session.resolved.set('db.host', {
+      value: 'db.internal',
+      versionNumber: 5,
+      secret: false,
+      scope: 'stage',
+      configSet: 'db',
+    });
     applyConfigResolution({
-      functions: [{ key: 'fn', environment: { PW: '⟦si-cfg:0⟧' } }],
+      functions: [{ key: 'fn', environment: { CONN: 'pg://u:⟦si-cfg:0⟧@⟦si-cfg:1⟧/app' } }],
       databases: [],
     });
+    registerRuntimeSecret('sirt_com_live_abc');
 
-    // redactPayloadDeep matches the EXACT values resolved this run — the same
-    // contract the state/spec boundaries use.
     const payload = {
       message: 'sup3r-s3cret',
-      nested: { details: ['a', 'sup3r-s3cret', { deep: 'sup3r-s3cret' }] },
+      error: 'Auth failed with password=sup3r-s3cret and token=sirt_com_live_abc',
+      dsnError: 'Cannot connect to pg://u:sup3r-s3cret@db.internal/app',
+      nested: { details: ['a', 'sup3r-s3cret', { deep: 'prefix-sup3r-s3cret-suffix' }] },
       untouched: 'ordinary',
     };
-    const { redactPayloadDeep } = await import('../../../src/common/envRedaction');
+    const {
+      redactPayloadDeep,
+      isSensitiveEnvEntry,
+      RUNTIME_TOKEN_PRESERVE,
+      redactEnvironmentAttributes,
+    } = await import('../../../src/common/envRedaction');
     expect(redactPayloadDeep(payload)).toEqual({
       message: '[REDACTED]',
-      nested: { details: ['a', '[REDACTED]', { deep: '[REDACTED]' }] },
+      error: 'Auth failed with password=[REDACTED] and token=[REDACTED]',
+      dsnError: 'Cannot connect to [REDACTED]',
+      nested: { details: ['a', '[REDACTED]', { deep: 'prefix-[REDACTED]-suffix' }] },
       untouched: 'ordinary',
     });
+    // Non-secret-named env keys holding a session secret or runtime sentinel are sensitive.
+    expect(isSensitiveEnvEntry('CONN', 'pg://u:sup3r-s3cret@db.internal/app')).toBe(true);
+    expect(isSensitiveEnvEntry('CUSTOM', RUNTIME_TOKEN_PRESERVE)).toBe(true);
+    expect(
+      redactEnvironmentAttributes({ environment: { SI_CONFIG_TOKEN: RUNTIME_TOKEN_PRESERVE } })
+        .environment,
+    ).toEqual({ SI_CONFIG_TOKEN: '[REDACTED]' });
     endConfigSession();
+    setAppliedConfigMeta(null);
   });
 
   it('passes payloads through untouched when no session secrets exist', async () => {
