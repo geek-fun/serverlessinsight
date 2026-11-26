@@ -68,6 +68,41 @@ describe('esServerlessExecutor', () => {
   });
 
   describe('executeEsPlan', () => {
+    it('reports the drift message on the resource_pre event for drifted items', async () => {
+      const reportEvent = jest.fn();
+      const ctx = { ...mockContext, reportEvent };
+      const newState: StateFile = {
+        ...initialState,
+        resources: {
+          'databases.test_db': {
+            mode: 'managed' as ResourceMode,
+            region: 'ap-guangzhou',
+            definition: { name: 'test-db' },
+            instances: [{ sid: 'si:tencent:es', id: 'space-123' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+      (esResource.createEsResource as jest.Mock).mockResolvedValue(newState);
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'databases.test_db',
+            action: 'create',
+            resourceType: 'TENCENT_ES_SERVERLESS',
+            drifted: true,
+          },
+        ],
+      };
+
+      const result = await executeEsPlan(ctx, plan, [testDatabase], initialState);
+
+      expect(result.partialFailure).toBeUndefined();
+      expect(reportEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'resource_pre', message: 'RESOURCE_DRIFTED' }),
+      );
+    });
+
     it('should handle empty plan', async () => {
       const plan: Plan = { items: [] };
       const result = await executeEsPlan(mockContext, plan, [testDatabase], initialState);

@@ -483,6 +483,12 @@ export const zhCN = {
   DELETING_RESOURCE: '正在删除 {{resourceType}}: {{name}}',
   RESOURCE_DELETED: '成功删除 {{resourceType}}: {{name}}',
   NO_CHANGESForResource: '{{logicalId}} 无变更',
+  RESOURCE_DRIFTED: '资源已漂移',
+  EVENT_LEGACY_QUEUE_PRESERVED:
+    '发现 {{count}} 个未记录 Console 来源的 v2 前事件队列文件，已保留待显式恢复',
+  EVENT_REPLAY_ORIGIN_MISMATCH: '跳过重放 {{file}}：它写自另一个 Console 来源',
+  EVENT_BATCH_REJECTED:
+    '服务端永久拒绝了部署 {{deploymentId}} 的 {{count}} 条队列事件（{{error}}），已保留在本地供排查',
   STATE_NOT_FOUND_SKIPPING: '未找到 {{logicalId}} 的状态，跳过删除',
   UNKNOWN_ACTION_FOR_RESOURCE: '{{logicalId}} 的未知操作: {{action}}',
   RESOURCE_NOT_FOUND_PROVIDER: '提供商中未找到 {{resourceType}} {{name}}，跳过删除',
@@ -1042,10 +1048,6 @@ export const zhCN = {
   // SaaS 后端消息
   SAAS_BACKEND_LOADING_STATE: '正在从控制台加载状态...',
   SAAS_BACKEND_SAVING_STATE: '正在保存状态到控制台...',
-  SAAS_BACKEND_DEPLOYMENT_STARTED: '正在控制台启动部署...',
-  SAAS_BACKEND_DEPLOYMENT_EVENT: '部署事件：{{logicalId}} {{action}} {{status}}',
-  SAAS_BACKEND_DEPLOYMENT_COMPLETE: '部署已在控制台完成。',
-  SAAS_BACKEND_DEPLOYMENT_FAILED: '部署在控制台失败：{{error}}',
   SAAS_BACKEND_LOCK_CHECK: '正在检查部署锁状态...',
   SAAS_BACKEND_NO_CREDENTIALS:
     'SaaS 状态后端需要登录 Console。\n请运行 `si login`，或：\n- 设置 SI_API_KEY 环境变量\n- 使用 --si-api-key 参数\n- 在 serverlessinsight.yml 中配置本地或存储桶后端',

@@ -544,6 +544,13 @@ export const en = {
   DELETING_RESOURCE: 'Deleting {{resourceType}}: {{name}}',
   RESOURCE_DELETED: 'Successfully deleted {{resourceType}}: {{name}}',
   NO_CHANGESForResource: 'No changes for {{logicalId}}',
+  RESOURCE_DRIFTED: 'resource drifted',
+  EVENT_LEGACY_QUEUE_PRESERVED:
+    'Found {{count}} pre-v2 event queue file(s) without a recorded Console origin; kept for explicit recovery',
+  EVENT_REPLAY_ORIGIN_MISMATCH:
+    'Skipping replay of {{file}}: it was written against a different Console origin',
+  EVENT_BATCH_REJECTED:
+    'Server permanently rejected {{count}} queued event(s) for deployment {{deploymentId}} ({{error}}); kept locally for inspection',
   STATE_NOT_FOUND_SKIPPING: 'State not found for {{logicalId}}, skipping deletion',
   UNKNOWN_ACTION_FOR_RESOURCE: 'Unknown action: {{action}} for {{logicalId}}',
   RESOURCE_NOT_FOUND_PROVIDER: '{{resourceType}} {{name}} not found in provider, skipping deletion',
@@ -1149,10 +1156,6 @@ export const en = {
   // SaaS backend messages
   SAAS_BACKEND_LOADING_STATE: 'Loading state from Console...',
   SAAS_BACKEND_SAVING_STATE: 'Saving state to Console...',
-  SAAS_BACKEND_DEPLOYMENT_STARTED: 'Starting deployment on Console...',
-  SAAS_BACKEND_DEPLOYMENT_EVENT: 'Deployment event: {{logicalId}} {{action}} {{status}}',
-  SAAS_BACKEND_DEPLOYMENT_COMPLETE: 'Deployment completed on Console.',
-  SAAS_BACKEND_DEPLOYMENT_FAILED: 'Deployment failed on Console: {{error}}',
   SAAS_BACKEND_LOCK_CHECK: 'Checking deployment lock status...',
   SAAS_BACKEND_NO_CREDENTIALS:
     'SaaS state requires Console login.\nRun `si login`, or:\n- Set SI_API_KEY environment variable\n- Use --si-api-key flag\n- Configure a local or bucket backend in serverlessinsight.yml',

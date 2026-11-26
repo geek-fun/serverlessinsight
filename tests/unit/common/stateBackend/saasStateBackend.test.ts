@@ -1238,7 +1238,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         const backend = await createSaasStateBackend({ scope }, { eventQueueDir: spool });
         await backend.loadState();
         backend.reportEvent!({ type: 'diagnostic', message: 'test event' });
-        const file = path.join(spool, 'deploy-1.jsonl');
+        const file = path.join(spool, fs.readdirSync(spool)[0]!);
         expect(fs.existsSync(file)).toBe(true);
         expect(JSON.parse(fs.readFileSync(file, 'utf8'))).not.toHaveProperty('queueDir');
         await backend.flushEvents!();
@@ -1479,7 +1479,68 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
             }),
           ]),
         }),
+        expect.objectContaining({ signal: expect.anything() }),
       );
+    });
+
+    it('reportEvent stamps occurredAt at emit time and preserves an explicit value', async () => {
+      mockMutatingLoad();
+      mockApiClient.patch.mockImplementation(phaseAck);
+
+      const backend = await createBackend();
+      await backend.loadState();
+
+      const report = (backend as StateBackend & { reportEvent?: (e: unknown) => Promise<void> })
+        .reportEvent;
+      await report!({ type: 'resource_pre', logicalId: 'functions.fn', action: 'create' });
+      await report!({
+        type: 'resource_complete',
+        logicalId: 'functions.fn',
+        occurredAt: '2020-01-01T00:00:00.000Z',
+      });
+
+      const flush = (backend as StateBackend & { flushEvents?: () => Promise<void> }).flushEvents;
+      if (flush) await flush();
+
+      const eventPatches = mockApiClient.patch.mock.calls.filter(
+        ([, body]) => (body as { phase?: string }).phase === 'event',
+      );
+      const sent = eventPatches.flatMap(
+        ([, body]) => (body as { events: Array<Record<string, unknown>> }).events,
+      );
+      const stamped = sent.find((e) => e.type === 'resource_pre')!;
+      expect(typeof stamped.occurredAt).toBe('string');
+      expect(new Date(stamped.occurredAt as string).toString()).not.toBe('Invalid Date');
+      expect(sent.find((e) => e.type === 'resource_complete')).toMatchObject({
+        occurredAt: '2020-01-01T00:00:00.000Z',
+      });
+    });
+
+    it('reportEvent preserves an explicit consoleUrl instead of the active origin', async () => {
+      mockMutatingLoad();
+      mockApiClient.patch.mockImplementation(phaseAck);
+
+      const backend = await createBackend();
+      await backend.loadState();
+
+      const report = (backend as StateBackend & { reportEvent?: (e: unknown) => Promise<void> })
+        .reportEvent;
+      await report!({
+        type: 'resource_pre',
+        logicalId: 'functions.fn',
+        consoleUrl: 'https://other.test',
+      });
+
+      const flush = (backend as StateBackend & { flushEvents?: () => Promise<void> }).flushEvents;
+      if (flush) await flush();
+
+      const eventPatches = mockApiClient.patch.mock.calls.filter(
+        ([, body]) => (body as { phase?: string }).phase === 'event',
+      );
+      const sent = eventPatches.flatMap(
+        ([, body]) => (body as { events: Array<Record<string, unknown>> }).events,
+      );
+      expect(sent[0]).toMatchObject({ consoleUrl: 'https://other.test' });
     });
 
     it('should replay orphaned event queues without throwing', async () => {
@@ -1488,18 +1549,23 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('replays orphaned queue files through the deployment recorded in each event', async () => {
-      const queueDir = path.join(os.homedir(), '.serverlessinsight', 'event-queue');
+      const queueDir = path.join(os.homedir(), '.serverlessinsight', 'event-queue', 'v2');
       fs.mkdirSync(queueDir, { recursive: true });
       fs.writeFileSync(
         path.join(queueDir, 'deploy-old.jsonl'),
-        `${JSON.stringify({ type: 'resource_post', deploymentId: 'deploy-42', sequence: 3 })}\n`,
+        `${JSON.stringify({
+          type: 'resource_post',
+          deploymentId: 'deploy-42',
+          sequence: 3,
+          consoleUrl: 'https://api.test.com',
+        })}\n`,
         'utf-8',
       );
-      // A batch whose first event carries no deploymentId cannot be routed —
-      // it is dropped without an HTTP call.
+      // A file without a recorded console origin cannot be attributed — it is
+      // kept for explicit recovery instead of replayed or discarded.
       fs.writeFileSync(
         path.join(queueDir, 'anonymous.jsonl'),
-        `${JSON.stringify({ type: 'resource_post', sequence: 4 })}\n`,
+        `${JSON.stringify({ type: 'resource_post', deploymentId: 'deploy-42', sequence: 4 })}\n`,
         'utf-8',
       );
       mockApiClient.patch.mockImplementation(phaseAck);
@@ -1509,15 +1575,91 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         await backend.replayOrphanedEvents?.();
 
         expect(mockApiClient.patch).toHaveBeenCalledTimes(1);
-        expect(mockApiClient.patch).toHaveBeenCalledWith('/api/v1/deployments/deploy-42', {
-          phase: 'event',
-          events: [{ type: 'resource_post', deploymentId: 'deploy-42', sequence: 3 }],
-        });
+        expect(mockApiClient.patch).toHaveBeenCalledWith(
+          '/api/v1/deployments/deploy-42',
+          {
+            phase: 'event',
+            events: [
+              {
+                type: 'resource_post',
+                deploymentId: 'deploy-42',
+                sequence: 3,
+                consoleUrl: 'https://api.test.com',
+              },
+            ],
+          },
+          expect.objectContaining({ signal: expect.anything() }),
+        );
         expect(fs.existsSync(path.join(queueDir, 'deploy-old.jsonl'))).toBe(false);
-        expect(fs.existsSync(path.join(queueDir, 'anonymous.jsonl'))).toBe(false);
+        const [retained] = fs.readdirSync(queueDir);
+        expect(JSON.parse(fs.readFileSync(path.join(queueDir, retained!), 'utf8'))).toMatchObject({
+          sequence: 4,
+        });
       } finally {
         fs.rmSync(queueDir, { recursive: true, force: true });
       }
+    });
+
+    it('keeps a v2 queue file after rollback and replays it with the original protocol', async () => {
+      const spool = fs.mkdtempSync(path.join(os.tmpdir(), 'si-saas-v2-replay-'));
+      const event = {
+        type: 'resource_pre',
+        deploymentId: 'deploy-42',
+        sequence: 1,
+        occurredAt: '2026-01-01T00:00:00.000Z',
+        deploymentEventsProtocol: 2,
+        consoleUrl: 'https://api.test.com',
+      };
+      fs.writeFileSync(path.join(spool, 'deploy-42.jsonl'), `${JSON.stringify(event)}\n`);
+      mockApiClient.patch.mockRejectedValueOnce(new ApiError('unsupported marker', 400));
+      try {
+        const backend = await createSaasStateBackend({ scope }, { eventQueueDir: spool });
+        await backend.replayOrphanedEvents!();
+        const [file] = fs.readdirSync(spool);
+        expect(JSON.parse(fs.readFileSync(path.join(spool, file!), 'utf8'))).toEqual(event);
+        mockApiClient.patch.mockResolvedValueOnce(undefined);
+        await backend.replayOrphanedEvents!();
+        expect(mockApiClient.get).not.toHaveBeenCalled();
+        for (const [, request] of mockApiClient.patch.mock.calls) {
+          expect(request).toMatchObject({
+            deploymentEventsProtocol: 2,
+            events: [{ sequence: 1, occurredAt: event.occurredAt }],
+          });
+          expect(request.events[0]).not.toHaveProperty('deploymentEventsProtocol');
+        }
+        expect(fs.readdirSync(spool)).toEqual([]);
+      } finally {
+        fs.rmSync(spool, { recursive: true, force: true });
+      }
+    });
+
+    it('marks event batches as protocol v2 when the server declares support', async () => {
+      mockApiClient.get.mockResolvedValueOnce({
+        scopeProtocol: 3,
+        regionalScope: true,
+        providerScope: true,
+        stateFormat: '4.0',
+        deploymentEventsProtocol: 2,
+      });
+      mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
+      mockApiClient.get.mockResolvedValueOnce(snapshot());
+      mockApiClient.patch.mockImplementation(phaseAck);
+
+      const backend = await createBackend();
+      await backend.loadState();
+
+      const report = (backend as StateBackend & { reportEvent?: (e: unknown) => Promise<void> })
+        .reportEvent;
+      await report!({ type: 'resource_pre', logicalId: 'functions.fn', action: 'create' });
+
+      const flush = (backend as StateBackend & { flushEvents?: () => Promise<void> }).flushEvents;
+      if (flush) await flush();
+
+      const eventPatches = mockApiClient.patch.mock.calls.filter(
+        ([, body]) => (body as { phase?: string }).phase === 'event',
+      );
+      expect(eventPatches).toHaveLength(1);
+      expect(eventPatches[0]![1]).toMatchObject({ deploymentEventsProtocol: 2 });
     });
   });
 });

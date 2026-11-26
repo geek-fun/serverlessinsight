@@ -6,11 +6,29 @@ export type ApiClientOptions = {
   readonly orgId?: string;
 };
 
+/** Per-call options; `signal` lets bounded callers (event queue flush/replay)
+ * cancel in-flight requests when their deadline expires. */
+export type ApiRequestOptions = {
+  readonly signal?: AbortSignal;
+};
+
 export type ApiClient = {
   readonly get: <T = unknown>(path: string) => Promise<T>;
-  readonly post: <T = unknown>(path: string, body?: unknown) => Promise<T>;
-  readonly put: <T = unknown>(path: string, body?: unknown) => Promise<T>;
-  readonly patch: <T = unknown>(path: string, body?: unknown) => Promise<T>;
+  readonly post: <T = unknown>(
+    path: string,
+    body?: unknown,
+    requestOptions?: ApiRequestOptions,
+  ) => Promise<T>;
+  readonly put: <T = unknown>(
+    path: string,
+    body?: unknown,
+    requestOptions?: ApiRequestOptions,
+  ) => Promise<T>;
+  readonly patch: <T = unknown>(
+    path: string,
+    body?: unknown,
+    requestOptions?: ApiRequestOptions,
+  ) => Promise<T>;
   readonly delete: <T = unknown>(path: string) => Promise<T>;
 };
 
@@ -113,10 +131,12 @@ const buildRequestInit = (
   method: HttpMethod,
   headers: Record<string, string>,
   body?: unknown,
+  signal?: AbortSignal,
 ): RequestInit => ({
   method: method.toUpperCase(),
   headers,
   ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  ...(signal ? { signal } : {}),
 });
 
 // The Console API wraps every response in { code, messages, data } and serializes
@@ -142,13 +162,24 @@ export const createApiClient = (options: ApiClientOptions): ApiClient => {
     headers['X-Org-Id'] = orgId;
   }
 
-  const request = async <T>(method: HttpMethod, path: string, body?: unknown): Promise<T> => {
+  const request = async <T>(
+    method: HttpMethod,
+    path: string,
+    body?: unknown,
+    requestOptions?: ApiRequestOptions,
+  ): Promise<T> => {
     let response: Response;
     try {
-      response = await fetch(`${baseUrl}${path}`, buildRequestInit(method, headers, body));
-    } catch {
+      response = await fetch(
+        `${baseUrl}${path}`,
+        buildRequestInit(method, headers, body, requestOptions?.signal),
+      );
+    } catch (error) {
+      // Deadline cancellations keep their identity so bounded callers can tell
+      // them apart from network failures; everything else is a network error.
+      if (requestOptions?.signal?.aborted) throw error;
       // Network-level failures (DNS, connection refused, timeout) surface as fetch rejections
-      throw new Error(lang.__('CREDENTIAL_NETWORK_ERROR'));
+      throw new Error(lang.__('CREDENTIAL_NETWORK_ERROR'), { cause: error });
     }
 
     if (!response.ok) {
@@ -164,9 +195,12 @@ export const createApiClient = (options: ApiClientOptions): ApiClient => {
 
   return {
     get: <T = unknown>(path: string) => request<T>('get', path),
-    post: <T = unknown>(path: string, body?: unknown) => request<T>('post', path, body),
-    put: <T = unknown>(path: string, body?: unknown) => request<T>('put', path, body),
-    patch: <T = unknown>(path: string, body?: unknown) => request<T>('patch', path, body),
+    post: <T = unknown>(path: string, body?: unknown, requestOptions?: ApiRequestOptions) =>
+      request<T>('post', path, body, requestOptions),
+    put: <T = unknown>(path: string, body?: unknown, requestOptions?: ApiRequestOptions) =>
+      request<T>('put', path, body, requestOptions),
+    patch: <T = unknown>(path: string, body?: unknown, requestOptions?: ApiRequestOptions) =>
+      request<T>('patch', path, body, requestOptions),
     delete: <T = unknown>(path: string) => request<T>('delete', path),
   };
 };

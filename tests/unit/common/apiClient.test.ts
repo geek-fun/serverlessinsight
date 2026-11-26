@@ -136,6 +136,18 @@ describe('apiClient', () => {
       );
       expect(result).toEqual({ updated: true });
     });
+
+    it('passes an abort signal through to fetch', async () => {
+      mockFetch.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      const controller = new AbortController();
+
+      await client.patch('/deploy/1', { phase: 'event' }, { signal: controller.signal });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${testBaseUrl}/deploy/1`,
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
   });
 
   describe('delete', () => {
@@ -329,6 +341,29 @@ describe('validateApiKey', () => {
     mockFetch.mockRejectedValue(new TypeError('fetch failed'));
 
     await expect(validateApiKey(validKey, testBaseUrl)).rejects.toThrow('CREDENTIAL_NETWORK_ERROR');
+  });
+
+  it('rethrows the abort error instead of masking it as a network failure', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    const controller = new AbortController();
+    mockFetch.mockRejectedValue(abortError);
+    const client = createApiClient({ apiKey: validKey, baseUrl: testBaseUrl });
+    controller.abort();
+
+    await expect(client.patch('/deploy/1', {}, { signal: controller.signal })).rejects.toBe(
+      abortError,
+    );
+  });
+
+  it('falls back to empty identifiers when the validate payload omits them', async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ code: 0, data: { valid: true, scopes: [] } }), { status: 200 }),
+    );
+
+    const result = await validateApiKey(validKey, testBaseUrl);
+
+    expect(result).toMatchObject({ orgId: '', orgName: '', userEmail: '', orgSlug: undefined });
   });
 });
 

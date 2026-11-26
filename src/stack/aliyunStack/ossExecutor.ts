@@ -113,7 +113,7 @@ export const executeBucketPlan = async (
       logicalId: item.logicalId,
       resourceType: item.resourceType,
       action: item.action,
-      ...(item.drifted ? { message: 'resource drifted' } : {}),
+      ...(item.drifted ? { message: lang.__('RESOURCE_DRIFTED') } : {}),
     });
     const __siStartedAt = Date.now();
     try {
@@ -121,11 +121,6 @@ export const executeBucketPlan = async (
       if (newState !== null) {
         currentState = newState;
         successfulItems.push(item);
-        reportResourceEvent(context, {
-          type: 'resource_complete',
-          logicalId: item.logicalId,
-          durationMs: Date.now() - __siStartedAt,
-        });
         if (onStateChange) {
           await onStateChange(currentState);
           logger.debug(
@@ -135,6 +130,13 @@ export const executeBucketPlan = async (
             }),
           );
         }
+        // State persistence is part of completing the operation; the
+        // completion event only lands once the state did.
+        reportResourceEvent(context, {
+          type: 'resource_complete',
+          logicalId: item.logicalId,
+          durationMs: Date.now() - __siStartedAt,
+        });
       }
     } catch (error) {
       reportResourceEvent(context, {
