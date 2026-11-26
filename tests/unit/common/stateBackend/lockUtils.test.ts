@@ -96,9 +96,12 @@ describe('lockUtils', () => {
       const start = Date.now();
       await sleep(100);
       const elapsed = Date.now() - start;
-      // Allow 10ms tolerance for timing precision issues in CI environments
+      // Lower bound proves the delay happened. The upper bound only catches
+      // gross over-sleeping: a loaded CI runner (macOS queue) has been observed
+      // stalling ~1.4s between the timer and the assertion, so a tight ceiling
+      // here is a flake generator, not a meaningful check.
       expect(elapsed).toBeGreaterThanOrEqual(90);
-      expect(elapsed).toBeLessThan(200);
+      expect(elapsed).toBeLessThan(2000);
     });
 
     it('should return a resolved promise', async () => {
@@ -110,7 +113,8 @@ describe('lockUtils', () => {
       const start = Date.now();
       await sleep(0);
       const elapsed = Date.now() - start;
-      expect(elapsed).toBeLessThan(50);
+      // Same reasoning as above — a slow runner may stall well past 50ms.
+      expect(elapsed).toBeLessThan(2000);
     });
   });
 

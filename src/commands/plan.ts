@@ -1,5 +1,14 @@
 import { getIacLocation, logger, setContext, setIac, ProviderEnum, getContext } from '../common';
 import { createStateBackend } from '../common/stateBackend';
+import {
+  beginConfigSession,
+  endConfigSession,
+  collectConfigRefs,
+  applyConfigResolution,
+  setAppliedConfigMeta,
+} from '../common/configSession';
+import { resolveConfigRefsViaSaas } from '../common/configClient';
+import { RUNTIME_TOKEN_PRESERVE } from '../common/envRedaction';
 import { buildPlanJson, buildPlanSummary, setJsonMode, writeJson } from '../common/jsonOutput';
 import { isNoColorEnabled } from '../common/noColor';
 import { parseYaml, revalYaml } from '../parser';
@@ -7,7 +16,7 @@ import { generateTencentPlan, displayPlan } from '../stack/scfStack';
 import { generateAliyunPlan } from '../stack/aliyunStack';
 import { generateVolcenginePlan } from '../stack/volcengineStack';
 import { lang } from '../lang';
-import { PlanDisplayConfig } from '../types';
+import { PlanDisplayConfig, ServerlessIac, StateBackendType } from '../types';
 
 export const plan = async (options: {
   location?: string;
@@ -42,63 +51,112 @@ export const plan = async (options: {
     true,
   );
   const context = getContext();
-  const iac = revalYaml(iacLocation, context);
 
-  // Store IAC in context for access by all functions
-  setIac(iac);
-
-  const providerDisplayNames: Partial<Record<ProviderEnum, string>> = {
-    [ProviderEnum.ALIYUN]: lang.__('PROVIDER_ALIYUN'),
-    [ProviderEnum.TENCENT]: lang.__('PROVIDER_TENCENT'),
-    [ProviderEnum.VOLCENGINE]: lang.__('PROVIDER_VOLCENGINE'),
-  };
-  const providerDisplayName = providerDisplayNames[iac.provider.name] ?? iac.provider.name;
-  logger.info(lang.__('GENERATING_PLAN_FOR_PROVIDER', { provider: providerDisplayName }));
-
-  const backend = await createStateBackend(iac.backend, {
-    ...context,
-    declaredOrg: iac.org,
-    siApiKey: options.siApiKey,
-    org: options.org,
-    line: options.line,
-    migrationMarker: 'warn',
-    mode: 'read-only',
-  });
-  let planResult;
-
-  if (iac.provider.name === ProviderEnum.TENCENT) {
-    planResult = await generateTencentPlan(iac, backend);
-  } else if (iac.provider.name === ProviderEnum.ALIYUN) {
-    planResult = await generateAliyunPlan(iac, backend);
-  } else if (iac.provider.name === ProviderEnum.VOLCENGINE) {
-    planResult = await generateVolcenginePlan(iac, backend);
-  } else {
-    logger.error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));
-    throw new Error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));
-  }
-
-  if (options.json) {
-    writeJson(
-      buildPlanJson(planResult, {
-        provider: iac.provider.name,
-        app: iac.app,
-        service: iac.service,
+  // Epic #53 P1: resolve config-set references read-only for `si diff` so live
+  // cloud comparisons match deployed values instead of raw templates.
+  const configRefs = collectConfigRefs(rawIac, context.stage);
+  let iac: ServerlessIac;
+  const session = beginConfigSession();
+  try {
+    if (configRefs.length > 0) {
+      if (rawIac.backend?.type !== StateBackendType.SAAS) {
+        throw new Error(lang.__('CONFIG_RESOLVE_REQUIRES_SAAS'));
+      }
+      logger.info(lang.__('CONFIG_RESOLVING_REFS', { count: String(configRefs.length) }));
+      const resolved = await resolveConfigRefsViaSaas(configRefs, {
         stage: context.stage,
+        app: rawIac.app,
+        service: rawIac.service,
+        provider: context.provider,
         region: context.region,
-      }),
-    );
-  } else {
-    const displayConfig: PlanDisplayConfig = {
-      colorize: !(options.noColor ?? false) && !isNoColorEnabled(),
-      indentSize: 4,
-      keyAlignWidth: 12,
-    };
-    displayPlan(planResult, displayConfig);
+        siApiKey: options.siApiKey,
+        declaredOrg: rawIac.org,
+        org: options.org,
+        line: options.line,
+      });
+      for (const [ref, value] of resolved) {
+        session.resolved.set(ref, value);
+      }
+    }
+    iac = revalYaml(iacLocation, context);
+    applyConfigResolution(iac);
+  } finally {
+    endConfigSession();
   }
 
-  const summary = buildPlanSummary(planResult.items ?? []);
-  const changeCount = summary.create + summary.update + summary.destroy + summary.recreate;
-  return { hasChanges: changeCount > 0 };
+  try {
+    // Store IAC in context for access by all functions
+    setIac(iac);
+
+    const providerDisplayNames: Partial<Record<ProviderEnum, string>> = {
+      [ProviderEnum.ALIYUN]: lang.__('PROVIDER_ALIYUN'),
+      [ProviderEnum.TENCENT]: lang.__('PROVIDER_TENCENT'),
+      [ProviderEnum.VOLCENGINE]: lang.__('PROVIDER_VOLCENGINE'),
+    };
+    const providerDisplayName = providerDisplayNames[iac.provider.name] ?? iac.provider.name;
+    logger.info(lang.__('GENERATING_PLAN_FOR_PROVIDER', { provider: providerDisplayName }));
+
+    const backend = await createStateBackend(iac.backend, {
+      ...context,
+      declaredOrg: iac.org,
+      siApiKey: options.siApiKey,
+      org: options.org,
+      line: options.line,
+      migrationMarker: 'warn',
+      mode: 'read-only',
+    });
+
+    // Align read-only diff with deploy's runtime-token env contract without
+    // minting or rotating any key.
+    if (configRefs.length > 0 && (backend.consoleUrl || backend.issueRuntimeConfigToken)) {
+      for (const fn of iac.functions ?? []) {
+        fn.environment = {
+          ...(fn.environment ?? {}),
+          SI_CONFIG_TOKEN: RUNTIME_TOKEN_PRESERVE,
+          ...(backend.consoleUrl ? { SI_CONSOLE_URL: backend.consoleUrl } : {}),
+        };
+      }
+      setIac(iac);
+    }
+
+    let planResult;
+
+    if (iac.provider.name === ProviderEnum.TENCENT) {
+      planResult = await generateTencentPlan(iac, backend);
+    } else if (iac.provider.name === ProviderEnum.ALIYUN) {
+      planResult = await generateAliyunPlan(iac, backend);
+    } else if (iac.provider.name === ProviderEnum.VOLCENGINE) {
+      planResult = await generateVolcenginePlan(iac, backend);
+    } else {
+      logger.error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));
+      throw new Error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));
+    }
+
+    if (options.json) {
+      writeJson(
+        buildPlanJson(planResult, {
+          provider: iac.provider.name,
+          app: iac.app,
+          service: iac.service,
+          stage: context.stage,
+          region: context.region,
+        }),
+      );
+    } else {
+      const displayConfig: PlanDisplayConfig = {
+        colorize: !(options.noColor ?? false) && !isNoColorEnabled(),
+        indentSize: 4,
+        keyAlignWidth: 12,
+      };
+      displayPlan(planResult, displayConfig);
+    }
+
+    const summary = buildPlanSummary(planResult.items ?? []);
+    const changeCount = summary.create + summary.update + summary.destroy + summary.recreate;
+    return { hasChanges: changeCount > 0 };
+  } finally {
+    setAppliedConfigMeta(null);
+  }
 };
 
 export type DiffCommandOptions = {

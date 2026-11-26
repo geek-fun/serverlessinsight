@@ -1,9 +1,14 @@
-import { redactEnvironmentAttributes } from './envRedaction';
+import {
+  isConfigRefMarker,
+  readEnvironment,
+  redactEnvironmentAttributes,
+  sessionMarkerFor,
+} from './envRedaction';
 import { PlanItem, ResourceAttributes, ResourceState, StateFile } from '../types';
-import { attributesEqual } from './hashUtils';
 import { assertPlanIdentity, assertSupportedPlanUpdate } from './planCapabilities';
 import { getResource, setResource } from './stateManager';
 import {
+  alignRuntimeTokenDesired,
   computeRevertKeys,
   definitionsDiffer,
   managedDefinition,
@@ -206,7 +211,7 @@ const planRefreshedResourceCore = async <T>(
     normalize(desiredDefinition),
   );
   const normalizedDesired = managedDefinition(normalize(desiredDefinition));
-  const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
+  const definitionChanged = definitionsDiffer(normalizedCurrent, normalizedDesired);
   const refreshEnabled = args.refresh ?? true;
 
   try {
@@ -215,17 +220,18 @@ const planRefreshedResourceCore = async <T>(
       if (!definitionChanged) {
         return { logicalId, action: 'noop', resourceType };
       }
+      const alignedAfter = alignRuntimeTokenDesired(normalizedCurrent, normalizedDesired);
       assertSupportedPlanUpdate(
         logicalId,
         resourceType,
         { ...currentDefinition, ...normalizedCurrent },
-        normalizedDesired,
+        alignedAfter,
       );
       return {
         logicalId,
         action: 'update',
         resourceType,
-        changes: { before: normalizedCurrent, after: normalizedDesired },
+        changes: { before: normalizedCurrent, after: alignedAfter },
       };
     }
 
@@ -239,7 +245,9 @@ const planRefreshedResourceCore = async <T>(
         definitionChanged &&
         definitionsDiffer(
           redactEnvironmentAttributes(normalizedCurrent),
-          redactEnvironmentAttributes(normalizedDesired),
+          redactEnvironmentAttributes(
+            alignRuntimeTokenDesired(normalizedCurrent, normalizedDesired),
+          ),
         ),
       extraUpdate: args.extraUpdate,
     });
@@ -263,21 +271,26 @@ const planRefreshedResourceCore = async <T>(
     }
 
     const normalizedLive = normalize(decision.liveAttributes);
-    const before = mergeLiveBefore(normalizedCurrent, normalizedLive, normalizedDesired);
+    const liveBefore = mergeLiveBefore(normalizedCurrent, normalizedLive, normalizedDesired);
+    const alignedAfter = alignRuntimeTokenDesired(liveBefore, normalizedDesired);
     assertSupportedPlanUpdate(
       logicalId,
       resourceType,
-      { ...currentDefinition, ...before },
-      normalizedDesired,
+      { ...currentDefinition, ...liveBefore },
+      alignedAfter,
     );
     const revertKeys = computeRevertKeys(normalizedCurrent, normalizedLive, normalizedDesired);
+    // Preserve stored cfgref provenance on `before` when the secret ref version
+    // moved or was removed, so refreshed plan diffs render `vBefore → vAfter`
+    // and removed non-secret-named secret keys stay masked.
+    const before = restoreStoredConfigRefMarkers(liveBefore, normalizedCurrent, alignedAfter);
     return {
       logicalId,
       action: 'update',
       resourceType,
       changes: {
         before,
-        after: normalizedDesired,
+        after: alignedAfter,
       },
       ...(decision.drifted ? { drifted: true } : {}),
       ...(revertKeys.length ? { revertKeys } : {}),
@@ -292,6 +305,34 @@ const planRefreshedResourceCore = async <T>(
     );
     throw error;
   }
+};
+
+const restoreStoredConfigRefMarkers = (
+  liveBefore: ResourceAttributes,
+  stored: ResourceAttributes,
+  after: ResourceAttributes,
+): ResourceAttributes => {
+  const beforeEnv = readEnvironment(liveBefore.environment);
+  const storedEnv = readEnvironment(stored.environment);
+  if (!beforeEnv || !storedEnv) return liveBefore;
+  const afterEnv = readEnvironment(after.environment);
+  let changed = false;
+  const restored = Object.fromEntries(
+    Object.entries(beforeEnv).map(([key, liveValue]) => {
+      const storedValue = storedEnv[key];
+      const desiredValue = afterEnv?.[key];
+      if (
+        isConfigRefMarker(storedValue) &&
+        liveValue !== desiredValue &&
+        sessionMarkerFor(desiredValue) !== storedValue
+      ) {
+        changed = true;
+        return [key, storedValue];
+      }
+      return [key, liveValue];
+    }),
+  );
+  return changed ? { ...liveBefore, environment: restored } : liveBefore;
 };
 
 /** Applied only under the deployment lock, never by the read-only plan command. */

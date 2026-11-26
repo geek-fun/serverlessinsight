@@ -124,3 +124,159 @@ describe('environment redaction', () => {
     },
   );
 });
+
+describe('config-set ref markers (epic #53 P1)', () => {
+  it('masks resolved secret values as cfgref markers and keeps existing markers', async () => {
+    const { beginConfigSession, endConfigSession } =
+      await import('../../../src/common/configSession');
+    const session = beginConfigSession();
+    session.resolved.set('db.password', {
+      value: 'sup3r-s3cret',
+      versionNumber: 5,
+      secret: true,
+      scope: 'stage',
+      configSet: 'db',
+    });
+    const { applyConfigResolution } = await import('../../../src/common/configSession');
+
+    session.resolved.set('db.password', {
+      value: 'sup3r-s3cret',
+      versionNumber: 5,
+      secret: true,
+      scope: 'stage',
+      configSet: 'db',
+    });
+    // register the sentinel first: calcValue would normally do this
+    session.placeholderOf('db.password');
+    // simulate the sentinel→value application with meta
+    const meta = applyConfigResolution({
+      functions: [{ key: 'fn', environment: { PW: '⟦si-cfg:0⟧' } }],
+      databases: [],
+    });
+    void meta;
+    const redacted = redactEnvironmentOrEmpty({ PW: 'sup3r-s3cret', OTHER: 'visible' });
+    expect(redacted.PW).toBe('cfgref:config_sets.db.password@v5');
+    expect(redacted.OTHER).toBe('visible');
+    // an already-markerred value is the redacted form — kept as-is
+    expect(redactEnvironmentOrEmpty({ PW: 'cfgref:config_sets.db.password@v5' }).PW).toBe(
+      'cfgref:config_sets.db.password@v5',
+    );
+    endConfigSession();
+  });
+
+  it('plan paths map a session secret against its previous marker to show version movement', async () => {
+    const { beginConfigSession, applyConfigResolution, endConfigSession } =
+      await import('../../../src/common/configSession');
+    const session = beginConfigSession();
+    session.placeholderOf('db.password');
+    session.resolved.set('db.password', {
+      value: 'sup3r-s3cret',
+      versionNumber: 5,
+      secret: true,
+      scope: 'stage',
+      configSet: 'db',
+    });
+    applyConfigResolution({
+      functions: [{ key: 'fn', environment: { PW: '⟦si-cfg:0⟧' } }],
+      databases: [],
+    });
+
+    // Plan path (`before` present): the freshly resolved secret against the
+    // previous real value produces the v3 → v5 provenance line.
+    const { redactEnvironmentAttributes } = await import('../../../src/common/envRedaction');
+    const redacted = redactEnvironmentAttributes(
+      { environment: { PW: 'sup3r-s3cret' } },
+      { environment: { PW: 'cfgref:config_sets.db.password@v3' } },
+    );
+    expect(redacted.environment?.PW).toBe('*** (config_sets.db.password@v3 → v5)');
+    // The state path (no `before`) keeps the bare marker for drift substitution.
+    const statePath = redactEnvironmentAttributes({ environment: { PW: 'sup3r-s3cret' } });
+    expect(statePath.environment?.PW).toBe('cfgref:config_sets.db.password@v5');
+    endConfigSession();
+  });
+
+  it('plan display shows ref@vBefore → vAfter provenance for changed markers', async () => {
+    const { redactEnvironmentAttributes } = await import('../../../src/common/envRedaction');
+    const redacted = redactEnvironmentAttributes(
+      { environment: { PW: 'cfgref:config_sets.db.password@v5' } },
+      { environment: { PW: 'cfgref:config_sets.db.password@v3' } },
+    );
+    expect(redacted.environment?.PW).toBe('*** (config_sets.db.password@v3 → v5)');
+    const fresh = redactEnvironmentAttributes({
+      environment: { PW: 'cfgref:config_sets.db.password@v7' },
+    });
+    expect(fresh.environment?.PW).toBe('cfgref:config_sets.db.password@v7');
+  });
+});
+
+describe('redactPayloadDeep (epic #53 P1 — event stream never carries secrets)', () => {
+  it('scrubs both exact and substring secret occurrences (including runtime tokens), longest-first', async () => {
+    const {
+      beginConfigSession,
+      applyConfigResolution,
+      endConfigSession,
+      registerRuntimeSecret,
+      setAppliedConfigMeta,
+    } = await import('../../../src/common/configSession');
+    const session = beginConfigSession();
+    session.placeholderOf('db.password');
+    session.placeholderOf('db.host');
+    session.resolved.set('db.password', {
+      value: 'sup3r-s3cret',
+      versionNumber: 5,
+      secret: true,
+      scope: 'stage',
+      configSet: 'db',
+    });
+    session.resolved.set('db.host', {
+      value: 'db.internal',
+      versionNumber: 5,
+      secret: false,
+      scope: 'stage',
+      configSet: 'db',
+    });
+    applyConfigResolution({
+      functions: [{ key: 'fn', environment: { CONN: 'pg://u:⟦si-cfg:0⟧@⟦si-cfg:1⟧/app' } }],
+      databases: [],
+    });
+    registerRuntimeSecret('sirt_com_live_abc');
+
+    const payload = {
+      message: 'sup3r-s3cret',
+      error: 'Auth failed with password=sup3r-s3cret and token=sirt_com_live_abc',
+      dsnError: 'Cannot connect to pg://u:sup3r-s3cret@db.internal/app',
+      nested: { details: ['a', 'sup3r-s3cret', { deep: 'prefix-sup3r-s3cret-suffix' }] },
+      untouched: 'ordinary',
+    };
+    const {
+      redactPayloadDeep,
+      isSensitiveEnvEntry,
+      RUNTIME_TOKEN_PRESERVE,
+      redactEnvironmentAttributes,
+    } = await import('../../../src/common/envRedaction');
+    expect(redactPayloadDeep(payload)).toEqual({
+      message: '[REDACTED]',
+      error: 'Auth failed with password=[REDACTED] and token=[REDACTED]',
+      dsnError: 'Cannot connect to [REDACTED]',
+      nested: { details: ['a', '[REDACTED]', { deep: 'prefix-[REDACTED]-suffix' }] },
+      untouched: 'ordinary',
+    });
+    // Non-secret-named env keys holding a session secret or runtime sentinel are sensitive.
+    expect(isSensitiveEnvEntry('CONN', 'pg://u:sup3r-s3cret@db.internal/app')).toBe(true);
+    expect(isSensitiveEnvEntry('CUSTOM', RUNTIME_TOKEN_PRESERVE)).toBe(true);
+    expect(
+      redactEnvironmentAttributes({ environment: { SI_CONFIG_TOKEN: RUNTIME_TOKEN_PRESERVE } })
+        .environment,
+    ).toEqual({ SI_CONFIG_TOKEN: '[REDACTED]' });
+    endConfigSession();
+    setAppliedConfigMeta(null);
+  });
+
+  it('passes payloads through untouched when no session secrets exist', async () => {
+    const { redactPayloadDeep } = await import('../../../src/common/envRedaction');
+    const { setAppliedConfigMeta } = await import('../../../src/common/configSession');
+    setAppliedConfigMeta(null);
+    const payload = { message: 'plain', list: [1, 2] };
+    expect(redactPayloadDeep(payload)).toStrictEqual(payload);
+  });
+});

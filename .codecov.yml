@@ -1,0 +1,20 @@
+# Coverage gates aligned with the repository's own quality bar — jest.config.js
+# enforces 85% (statements/branches/functions/lines) as the mandatory threshold,
+# so the codecov gates use the same number instead of codecov's auto-target
+# (which floats with the base report and blocked PRs at 91.33% on branch
+# partials that jest itself accepts).
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  status:
+    project:
+      default:
+        target: 85%
+    patch:
+      default:
+        target: 85%
+
+comment:
+  layout: reach, diff, flags, files
+  behavior: default

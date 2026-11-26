@@ -54,6 +54,34 @@ jest.mock('../../../src/stack/volcengineStack', () => ({
   generateVolcenginePlan: jest.fn(),
 }));
 
+const mockedCollectConfigRefs = jest.fn<string[], []>(() => []);
+const mockedBeginConfigSession = jest.fn(() => ({
+  resolved: new Map(),
+  records: new Map(),
+  placeholderOf: jest.fn(),
+}));
+const mockedApplyConfigResolution = jest.fn();
+const mockedEndConfigSession = jest.fn();
+const mockedSetAppliedConfigMeta = jest.fn();
+const mockedResolveConfigRefsViaSaas = jest.fn();
+
+jest.mock('../../../src/common/configSession', () => ({
+  collectConfigRefs: () => mockedCollectConfigRefs(),
+  beginConfigSession: () => mockedBeginConfigSession(),
+  applyConfigResolution: (...args: unknown[]) => mockedApplyConfigResolution(...args),
+  endConfigSession: () => mockedEndConfigSession(),
+  setAppliedConfigMeta: (...args: unknown[]) => mockedSetAppliedConfigMeta(...args),
+  activeConfigSession: jest.fn(),
+  getAppliedConfigMeta: jest.fn(),
+  configRefMarker: jest.fn(),
+  parseConfigRefMarker: jest.fn(),
+  isConfigRefMarker: jest.fn((): boolean => false),
+}));
+
+jest.mock('../../../src/common/configClient', () => ({
+  resolveConfigRefsViaSaas: (...args: unknown[]) => mockedResolveConfigRefsViaSaas(...args),
+}));
+
 jest.mock('../../../src/lang', () => ({
   lang: {
     __: jest.fn((key: string) => key),
@@ -474,6 +502,97 @@ describe('plan command', () => {
         process.exitCode = originalExitCode;
         stdout.mockRestore();
       }
+    });
+  });
+
+  describe('config-set read-only resolution (epic #53 P1/P2)', () => {
+    it('resolves config refs with deployment scope and aligns runtime-token env without rotating keys', async () => {
+      const session = {
+        resolved: new Map([
+          [
+            'db.host',
+            {
+              value: 'db.prod.internal',
+              versionNumber: 4,
+              secret: false,
+              scope: 'stage',
+              configSet: 'db',
+            },
+          ],
+        ]),
+        records: new Map(),
+        placeholderOf: jest.fn(),
+      };
+      const saasRawIac = {
+        app: 'test-app',
+        service: 'test-service',
+        org: 'my-org',
+        provider: { name: ProviderEnum.ALIYUN },
+        stages: {},
+        backend: { type: 'SAAS' },
+      };
+      const evaluatedIac = {
+        ...saasRawIac,
+        functions: [{ key: 'api_fn', environment: { DB_HOST: 'db.prod.internal' } }],
+      };
+      (parseYaml as jest.Mock).mockReturnValueOnce(saasRawIac);
+      (revalYaml as jest.Mock).mockReturnValueOnce(evaluatedIac);
+      mockedCollectConfigRefs.mockReturnValueOnce(['db.host']);
+      mockedBeginConfigSession.mockReturnValueOnce(session);
+      mockedResolveConfigRefsViaSaas.mockResolvedValueOnce(session.resolved);
+      const saasBackend = {
+        consoleUrl: 'https://console.example.test',
+        issueRuntimeConfigToken: jest.fn(),
+      };
+      (createStateBackend as jest.Mock).mockReturnValueOnce(saasBackend);
+
+      await plan({ location: '/test/path', stage: 'prod', siApiKey: 'si_com_key' });
+
+      expect(mockedResolveConfigRefsViaSaas).toHaveBeenCalledWith(['db.host'], {
+        stage: 'dev',
+        app: 'test-app',
+        service: 'test-service',
+        provider: ProviderEnum.ALIYUN,
+        region: 'cn-beijing',
+        siApiKey: 'si_com_key',
+        declaredOrg: 'my-org',
+        org: undefined,
+        line: undefined,
+      });
+      expect(saasBackend.issueRuntimeConfigToken).not.toHaveBeenCalled();
+      expect(generateAliyunPlan).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functions: [
+            expect.objectContaining({
+              environment: expect.objectContaining({
+                DB_HOST: 'db.prod.internal',
+                SI_CONFIG_TOKEN: '⟦si-runtime-token⟧',
+                SI_CONSOLE_URL: 'https://console.example.test',
+              }),
+            }),
+          ],
+        }),
+        saasBackend,
+      );
+      expect(mockedEndConfigSession).toHaveBeenCalled();
+      expect(mockedSetAppliedConfigMeta).toHaveBeenCalledWith(null);
+    });
+
+    it('fails closed on config refs when backend is not SAAS and closes session', async () => {
+      (parseYaml as jest.Mock).mockReturnValueOnce({
+        app: 'test-app',
+        service: 'test-service',
+        provider: { name: ProviderEnum.ALIYUN },
+        stages: {},
+        backend: { type: 'LOCAL' },
+      });
+      mockedCollectConfigRefs.mockReturnValueOnce(['db.host']);
+
+      await expect(plan({ location: '/test/path' })).rejects.toThrow(
+        /CONFIG_RESOLVE_REQUIRES_SAAS/,
+      );
+      expect(mockedResolveConfigRefsViaSaas).not.toHaveBeenCalled();
+      expect(mockedEndConfigSession).toHaveBeenCalled();
     });
   });
 });

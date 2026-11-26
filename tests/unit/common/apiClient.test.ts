@@ -104,6 +104,25 @@ describe('apiClient', () => {
     });
   });
 
+  describe('put', () => {
+    it('sends a PUT request with a JSON body and unwraps the envelope', async () => {
+      mockFetch.mockResolvedValue(
+        new Response(JSON.stringify({ code: 2001, data: { updated: true } }), { status: 200 }),
+      );
+      const client = createApiClient({
+        apiKey: 'si_com_abc_secret',
+        baseUrl: 'https://api.example.test',
+      });
+      const body = { items: [{ key: 'A', value: 'b' }] };
+      const result = await client.put('/config-sets/cs-1', body);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.test/config-sets/cs-1',
+        expect.objectContaining({ method: 'PUT', body: JSON.stringify(body) }),
+      );
+      expect(result).toEqual({ updated: true });
+    });
+  });
+
   describe('patch', () => {
     it('should make a PATCH request with JSON body', async () => {
       mockFetch.mockResolvedValue(new Response(JSON.stringify({ updated: true }), { status: 200 }));
@@ -178,7 +197,7 @@ describe('apiClient', () => {
       },
     );
 
-    it.each(['get', 'post', 'patch', 'delete'] as const)(
+    it.each(['get', 'post', 'put', 'patch', 'delete'] as const)(
       'rejects %s requests after reading an error body',
       async (method) => {
         mockFetch.mockResolvedValue(

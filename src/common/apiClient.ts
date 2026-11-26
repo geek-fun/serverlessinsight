@@ -19,6 +19,11 @@ export type ApiClient = {
     body?: unknown,
     requestOptions?: ApiRequestOptions,
   ) => Promise<T>;
+  readonly put: <T = unknown>(
+    path: string,
+    body?: unknown,
+    requestOptions?: ApiRequestOptions,
+  ) => Promise<T>;
   readonly patch: <T = unknown>(
     path: string,
     body?: unknown,
@@ -63,7 +68,7 @@ export class ApiError extends Error {
   }
 }
 
-type HttpMethod = 'get' | 'post' | 'patch' | 'delete';
+type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
 // Opaque JSONB payloads from the Console API — their internal keys must NOT be case-converted
 const SKIP_CASE_CONVERT = new Set([
@@ -192,6 +197,8 @@ export const createApiClient = (options: ApiClientOptions): ApiClient => {
     get: <T = unknown>(path: string) => request<T>('get', path),
     post: <T = unknown>(path: string, body?: unknown, requestOptions?: ApiRequestOptions) =>
       request<T>('post', path, body, requestOptions),
+    put: <T = unknown>(path: string, body?: unknown, requestOptions?: ApiRequestOptions) =>
+      request<T>('put', path, body, requestOptions),
     patch: <T = unknown>(path: string, body?: unknown, requestOptions?: ApiRequestOptions) =>
       request<T>('patch', path, body, requestOptions),
     delete: <T = unknown>(path: string) => request<T>('delete', path),

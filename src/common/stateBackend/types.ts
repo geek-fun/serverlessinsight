@@ -32,6 +32,8 @@ export type StorageAdapter = {
 export type StateBackend = {
   readonly scope: DeploymentScope;
   readonly capabilities: BackendCapabilities;
+  /** Console base URL for SaaS backends (used to inject SI_CONSOLE_URL). */
+  readonly consoleUrl?: string;
   loadState: () => Promise<StateFile>;
   /** Project the migration source for the selected provider/region under the source lock. */
   loadMigrationStates?: (allStages: boolean) => Promise<StateFile[]>;
@@ -69,6 +71,13 @@ export type StateBackend = {
   flushEvents?: () => Promise<void>;
   /** ADR-005: replay event-queue files orphaned by a previous interrupted run. */
   replayOrphanedEvents?: () => Promise<void>;
+  /**
+   * Epic #53 P2: mint/rotate the runtime key (SI_CONFIG_TOKEN) for the
+   * deployment's service+stage using the backend's own client and resolved
+   * identity. Available only on the SaaS backend and only after the
+   * deployment identity resolved (post probeWriteReadiness).
+   */
+  issueRuntimeConfigToken?: () => Promise<{ token: string; consoleUrl: string }>;
 };
 
 export type { LockMetadata };

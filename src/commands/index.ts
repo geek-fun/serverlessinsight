@@ -13,6 +13,14 @@ import { validate } from './validate';
 import { deploy } from './deploy';
 import { destroyStack } from './destroy';
 import { runLocal } from './local';
+import {
+  configList,
+  configSet,
+  configVersions,
+  configRelease,
+  configTag,
+  configDelete,
+} from './config';
 import { runDiffCommand } from './plan';
 import { forceUnlockCommand } from './forceUnlock';
 import { show } from './show';
@@ -422,6 +430,193 @@ program
     ),
   );
 
+// ── si config (epic #53 P1) ──
+const configCmd = program.command('config').description(lang.__('CMD_CONFIG_DESC'));
+
+configCmd
+  .command('list')
+  .description(lang.__('CMD_CONFIG_LIST_DESC'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', LINE_OPTION_TEXT)
+  .action(
+    actionWrapper('config list', async ({ file, stage, region, provider, siApiKey, org, line }) => {
+      await configList({
+        location: file,
+        stage,
+        region,
+        provider,
+        siApiKey,
+        org,
+        line,
+      });
+    }),
+  );
+
+configCmd
+  .command('set <name.key>')
+  .description(lang.__('CMD_CONFIG_SET_DESC'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('--scope <scope>', lang.__('OPT_CONFIG_SCOPE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
+  .option('-t, --type <type>', lang.__('OPT_CONFIG_TYPE'), 'string')
+  .option('--description <description>', lang.__('OPT_CONFIG_DESCRIPTION'))
+  .option('--stdin', lang.__('OPT_CONFIG_STDIN'), false)
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', LINE_OPTION_TEXT)
+  .action(
+    actionWrapper(
+      'config set',
+      async (
+        ref,
+        { file, stage, scope, region, provider, type, description, stdin, siApiKey, org, line },
+      ) => {
+        await configSet(ref, {
+          location: file,
+          stage,
+          scope,
+          region,
+          provider,
+          type,
+          description,
+          stdin: !!stdin,
+          siApiKey,
+          org,
+          line,
+        });
+      },
+    ),
+  );
+
+configCmd
+  .command('versions <name>')
+  .description(lang.__('CMD_CONFIG_VERSIONS_DESC'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('--scope <scope>', lang.__('OPT_CONFIG_SCOPE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', LINE_OPTION_TEXT)
+  .action(
+    actionWrapper(
+      'config versions',
+      async (name, { file, stage, scope, region, provider, siApiKey, org, line }) => {
+        await configVersions(name, {
+          location: file,
+          stage,
+          scope,
+          region,
+          provider,
+          siApiKey,
+          org,
+          line,
+        });
+      },
+    ),
+  );
+
+configCmd
+  .command('release <name>')
+  .description(lang.__('CMD_CONFIG_RELEASE_DESC'))
+  .option('--version <version>', lang.__('OPT_CONFIG_VERSION'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('--scope <scope>', lang.__('OPT_CONFIG_SCOPE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', LINE_OPTION_TEXT)
+  .action(
+    actionWrapper(
+      'config release',
+      async (name, { version, file, stage, scope, region, provider, siApiKey, org, line }) => {
+        await configRelease(name, {
+          location: file,
+          stage,
+          scope,
+          region,
+          provider,
+          version: version !== undefined ? Number(version) : undefined,
+          siApiKey,
+          org,
+          line,
+        });
+      },
+    ),
+  );
+
+configCmd
+  .command('tag <name>')
+  .description(lang.__('CMD_CONFIG_TAG_DESC'))
+  .requiredOption('--version <version>', lang.__('OPT_CONFIG_VERSION'))
+  .requiredOption('--tag <tag>', lang.__('OPT_CONFIG_TAG'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('--scope <scope>', lang.__('OPT_CONFIG_SCOPE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', LINE_OPTION_TEXT)
+  .action(
+    actionWrapper(
+      'config tag',
+      async (name, { version, tag, file, stage, scope, region, provider, siApiKey, org, line }) => {
+        await configTag(name, {
+          location: file,
+          stage,
+          scope,
+          region,
+          provider,
+          version: Number(version),
+          tag,
+          siApiKey,
+          org,
+          line,
+        });
+      },
+    ),
+  );
+
+configCmd
+  .command('delete <name.key>')
+  .description(lang.__('CMD_CONFIG_DELETE_DESC'))
+  .option('-f, --file <path>', FILE_OPTION_TEXT)
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('--scope <scope>', lang.__('OPT_CONFIG_SCOPE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', PROVIDER_OPTION_TEXT)
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', LINE_OPTION_TEXT)
+  .action(
+    actionWrapper(
+      'config delete',
+      async (ref, { file, stage, scope, region, provider, siApiKey, org, line }) => {
+        await configDelete(ref, {
+          location: file,
+          stage,
+          scope,
+          region,
+          provider,
+          siApiKey,
+          org,
+          line,
+        });
+      },
+    ),
+  );
+
 program
   .command('local')
   .description(lang.__('CMD_LOCAL_DESC'))
@@ -432,10 +627,24 @@ program
   .option('-d, --debug', lang.__('OPT_DEBUG'))
   .option('-w, --watch', lang.__('OPT_WATCH'), true)
   .option('--strict-prefix', lang.__('OPT_STRICT_PREFIX'))
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', LINE_OPTION_TEXT)
   .action(
     actionWrapper(
       'local',
-      async ({ stage, debug, watch, file, provider, region, strictPrefix }) => {
+      async ({
+        stage,
+        debug,
+        watch,
+        file,
+        provider,
+        region,
+        strictPrefix,
+        siApiKey,
+        org,
+        line,
+      }) => {
         await runLocal({
           stage,
           debug: !!debug,
@@ -444,6 +653,9 @@ program
           provider,
           region,
           strictPrefix: !!strictPrefix,
+          siApiKey,
+          org,
+          line,
         });
       },
     ),

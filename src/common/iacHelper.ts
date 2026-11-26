@@ -5,6 +5,7 @@ import { get } from 'lodash';
 import { parseYaml } from '../parser';
 import { logger } from './logger';
 import { lang } from '../lang';
+import { activeConfigSession } from './configSession';
 
 /* istanbul ignore next */
 export const resolveCode = (location: string): string => {
@@ -64,7 +65,7 @@ export const calcValue = <T>(
   const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
 
   // Check if the entire value is a single template reference (for type inference)
-  const isExactTemplateRef = /^\$\{(vars|stages|ctx)\.[^}]+\}$/.test(rawValue);
+  const isExactTemplateRef = /^\$\{(vars|stages|ctx|config_sets)\.[^}]+\}$/.test(rawValue);
 
   let value = rawValue;
 
@@ -108,6 +109,23 @@ export const calcValue = <T>(
       }
       return stageValue || '';
     });
+  }
+
+  // Epic #53 P1: config-set refs (direct or expanded via ${vars.*}/${stages.*})
+  // swap for sentinels and register in the active session; applyConfigResolution
+  // substitutes them later. Session-less runs (validate/show) keep the template.
+  if (/\$\{config_sets\.[^}]+\}/.test(value)) {
+    const session = activeConfigSession();
+    if (!session) {
+      return value as T;
+    }
+    let sentinelValue = value;
+    for (const match of value.matchAll(/\$\{config_sets\.([^}]+)\}/g)) {
+      const ref = match[1]!;
+      const placeholder = session.placeholderOf(ref);
+      sentinelValue = sentinelValue.split(match[0]).join(placeholder);
+    }
+    return sentinelValue as T;
   }
 
   return inferType<T>(value, inferScalar && isExactTemplateRef);
